@@ -233,3 +233,4 @@ df_colour_popden_temp <- df_colour %>%
   dplyr::select(-c(ID.1,ID.2,ID.3,ID.4)) %>%
   mutate(avg_winter_low_temp = rowMeans(across(c(temp_jan20, temp_feb20, temp_jan21, temp_feb21)), na.rm = TRUE))
 
+### New -----
