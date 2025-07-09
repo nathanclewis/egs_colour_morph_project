@@ -56,6 +56,8 @@
   library(ggplot2) #for tidy plot generation
   library(geodata) #for generating human pop den data
   library("raster") #for reading temperature data
+  library(randomForest) #for randomForest
+  library(caret) #for confusion matrices
   }
 
 ### Read Data -----
@@ -244,4 +246,39 @@ df_colour_popden_temp <- df_colour %>%
   mutate(avg_winter_low_temp = rowMeans(across(c(temp_jan20, temp_feb20, temp_jan21, temp_feb21)), na.rm = TRUE)) %>%
   left_join(df_sq_mpr)
 
-### New -----
+### Random Forest -----
+
+## Create filtered df
+df_4ml <- df_colour_popden_temp %>%
+  dplyr::select(red, green, blue, sq_mpr_col) %>%
+  na.omit() %>%
+  filter(sq_mpr_col %in% c('gray', 'melanic')) %>%
+  mutate(sq_mpr_col = factor(sq_mpr_col))
+
+## Split df into testing and training sets
+ind <- sample(2, nrow(df_4ml),
+              replace = TRUE,
+              prob = c(0.8, 0.2))
+training <- df_4ml[ind==1,]
+testing <- df_4ml[ind==2,]
+
+## Downsample the training set so n(gray) = n(melanic)
+min_n <- training %>%
+  count(sq_mpr_col) %>%
+  pull(n) %>%
+  min()
+
+training_balanced <- training %>%
+  group_by(sq_mpr_col) %>%
+  slice_sample(n = min_n) %>%
+  ungroup()
+
+## Create model
+rf <- randomForest(sq_mpr_col ~ red + green + blue, data=training_balanced, ntree=10, importance=TRUE, na.action = na.roughfix)
+
+## Generate contingency table
+table(predict(rf),training_balanced$sq_mpr_col)
+
+## Make predictions on testing set
+prediction <- predict(rf, testing)
+confusionMatrix(prediction, as.factor(testing$sq_mpr_col))
