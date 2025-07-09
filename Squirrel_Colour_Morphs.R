@@ -87,6 +87,16 @@
     dplyr::select(id, observed_on, image_url, latitude, longitude) %>%
     #remove records from outside North America
     filter(latitude > 13 & longitude < -51)
+  
+  ## Squirrel Mapper data
+  df_sq_mpr <- read_csv("Data/squirrelMapper_observations.csv") %>%
+    rename(id = inat.id, sq_mpr_col = morph.class) %>%
+    #remove images with >1 squirrel
+    group_by(id) %>%
+    mutate(num_sq = n()) %>%
+    ungroup() %>%
+    filter(num_sq == 1 & !is.na(id)) %>%
+    dplyr::select(id, sq_mpr_col)
   }
 
 ### Test Image URLs and remove rows with invalid URLs -----
@@ -231,6 +241,7 @@ df_temps_feb21 <- raster::extract(feb_2020,
 df_colour_popden_temp <- df_colour %>%
   full_join(c(df_popden, df_temps_jan20, df_temps_feb20, df_temps_jan21, df_temps_feb21), copy = TRUE) %>%
   dplyr::select(-c(ID.1,ID.2,ID.3,ID.4)) %>%
-  mutate(avg_winter_low_temp = rowMeans(across(c(temp_jan20, temp_feb20, temp_jan21, temp_feb21)), na.rm = TRUE))
+  mutate(avg_winter_low_temp = rowMeans(across(c(temp_jan20, temp_feb20, temp_jan21, temp_feb21)), na.rm = TRUE)) %>%
+  left_join(df_sq_mpr)
 
 ### New -----
