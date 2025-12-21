@@ -58,6 +58,10 @@
   library("raster") #for reading temperature data
   library(randomForest) #for randomForest
   library(caret) #for confusion matrices
+  library(car) #for Anova
+  library(visreg) #for visualizing model fit
+  library(lme4) #for mixed models
+  library(leaflet) #for mapping
   }
 
 ### Read Data -----
@@ -246,7 +250,7 @@ df_colour_popden_temp <- df_colour %>%
   mutate(avg_winter_low_temp = rowMeans(across(c(temp_jan20, temp_feb20, temp_jan21, temp_feb21)), na.rm = TRUE)) %>%
   left_join(df_sq_mpr)
 
-### Random Forest -----
+### Train and test random forest -----
 
 ## Create filtered df
 df_4ml <- df_colour_popden_temp %>%
@@ -282,3 +286,79 @@ table(predict(rf),training_balanced$sq_mpr_col)
 ## Make predictions on testing set
 prediction <- predict(rf, testing)
 confusionMatrix(prediction, as.factor(testing$sq_mpr_col))
+
+### Predict colour morphs -----
+
+## Identify rows with missing colour morph class
+df_no_col <- df_colour_popden_temp %>%
+  filter(is.na(sq_mpr_col)) %>%
+  dplyr::select(red, green, blue)
+
+## Predict the missing values
+predicted_col_morphs <- predict(rf, newdata = df_no_col)
+
+## Add predictions back into the original data
+df_col_class <- df_colour_popden_temp %>%
+  mutate(
+    col_class = ifelse(
+      is.na(sq_mpr_col),
+      as.character(predicted_col_morphs),
+      as.character(sq_mpr_col)
+    ),
+    col_class = factor(col_class, levels = levels(training_balanced$sq_mpr_col))
+  )
+
+### Logistic regression -----
+
+## Reduce df
+df_4model <- df_col_class %>%
+  mutate(col_source = ifelse(is.na(sq_mpr_col), "rf", "sm")) %>%
+  dplyr::select(id, population_density, avg_winter_low_temp, col_class, col_source) %>%
+  na.omit()
+
+## Add log-centred versions of each predictor
+df_4model$pop_den_scaled <- scale(df_4model$population_density) %>% as.vector
+df_4model$winter_temp_scaled <- scale(df_4model$avg_winter_low_temp) %>% as.vector
+
+## Create model
+mod <- glm(col_class ~ pop_den_scaled + winter_temp_scaled + col_source,
+           family = binomial(link = "logit"),
+           data = df_4model)
+
+## Evaluate model
+summary(mod)
+Anova(mod)
+visreg(mod, scale = "response")
+
+### Plot raw data -----
+
+## Human pop den
+df_4model %>%
+  mutate(col_class_binary = ifelse(col_class == "gray", 0,
+                                   ifelse(col_class == "melanic", 1,
+                                          NA))) %>%
+  filter(!is.na(col_class_binary)) %>%
+  ggplot(aes(x = population_density, y = col_class_binary)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  facet_wrap(~col_source)
+
+## Winter temperature
+df_4model %>%
+  mutate(col_class_binary = ifelse(col_class == "gray", 0,
+                                   ifelse(col_class == "melanic", 1,
+                                          NA))) %>%
+  filter(!is.na(col_class_binary)) %>%
+  ggplot(aes(x = avg_winter_low_temp, y = col_class_binary)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  facet_wrap(~col_source)
+
+### Map data -----
+
+df_col_class %>%
+  mutate(col_source = ifelse(is.na(sq_mpr_col), "rf", "sm")) %>%
+  filter(col_source == "rf") %>%
+  leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(~longitude, ~latitude, color = ~col_source, popup = ~col_source, fillOpacity = 0.01)
