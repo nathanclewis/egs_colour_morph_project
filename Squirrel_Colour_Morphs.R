@@ -69,7 +69,7 @@
 { #run this line to read all data files
   
   ## In-progress 2019 dataset (including RGBs)
-  df_2019_completed <- read_csv("Data/sq_RGB_2019_1_6000.csv")
+  df_2019_completed <- read_csv("Data/sq_RGB_2019_1_6250.csv")
   
   ## Completed dataset (including RGBs) with 20,594 usable records from 2020
   df_2020_completed <- read_csv("Data/sq_RGB_2020_df_1_31535.csv") %>%
