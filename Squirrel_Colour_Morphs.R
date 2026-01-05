@@ -69,7 +69,7 @@
 { #run this line to read all data files
   
   ## In-progress 2019 dataset (including RGBs)
-  df_2019_completed <- read_csv("Data/sq_RGB_2019_1_6250.csv")
+  df_2019_completed <- read_csv("Data/sq_RGB_2019_1_7250.csv")
   
   ## Completed dataset (including RGBs) with 20,594 usable records from 2020
   df_2020_completed <- read_csv("Data/sq_RGB_2020_df_1_31535.csv") %>%
@@ -126,7 +126,7 @@ url_check = function(url_in,t=2){
 
 ## Choose a subset to process and remove invalid URLs (also removes invalid file type: .gif)
 df_2019_noerrors <- df_2019 %>%
-  slice(6000:6250) %>%
+  slice(7251:7500) %>%
   filter(!str_detect(image_url, "gif$")) %>%
   mutate(valid_url = future_map_lgl(image_url, url_check)) %>%
   filter(valid_url == TRUE)
@@ -142,7 +142,7 @@ locate_box = function(image_url){
 }
 
 ## Apply it to a short list
-df_2019_6000_6250 = df_2019_noerrors %>%
+df_2019_7251_7500 = df_2019_noerrors %>%
   #slice() %>%
   rowwise() %>%
   mutate(picture_info = list(locate_box(image_url))) %>%
@@ -169,7 +169,7 @@ extract_mean_colour = function(image, xmin, xmax, ymin, ymax){
 }
 
 ## Apply extract colour functions and create columns for red, green, and blue values
-df_2019_6000_6250_col <- df_2019_6000_6250 %>%
+df_2019_7251_7500_col <- df_2019_7251_7500 %>%
   mutate(mean_rgb = future_pmap(
     list(image_url, color_min_x, color_max_x, color_min_y, color_max_y),
     ~ extract_mean_colour(..1, ..2, ..3, ..4, ..5)
@@ -184,11 +184,11 @@ df_2019_6000_6250_col <- df_2019_6000_6250 %>%
 
 ## Generate complete dataset
 df_2019_new <- df_2019_completed %>%
-  rbind(df_2019_6000_6250_col) #insert name of newly created df here
+  rbind(df_2019_7251_7500_col) #insert name of newly created df here
 
 ## Write new csv. Always change the last number in the name to match the highest
 ## number clicked through to date before writing
-write_csv(df_2019_new, "Data/sq_RGB_2019_1_6250.csv")
+write_csv(df_2019_new, "Data/sq_RGB_2019_1_7500.csv")
 
 ## Compile data from all years into master df
 df_colour <- df_2020_completed %>%
