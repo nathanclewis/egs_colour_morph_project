@@ -69,7 +69,7 @@
 { #run this line to read all data files
   
   ## In-progress 2019 dataset (including RGBs)
-  df_2019_completed <- read_csv("Data/sq_RGB_2019_1_11500.csv")
+  df_2019_completed <- read_csv("Data/sq_RGB_2019_1_11750.csv")
   
   ## Completed dataset (including RGBs) with 20,594 usable records from 2020
   df_2020_completed <- read_csv("Data/sq_RGB_2020_df_1_31535.csv") %>%
@@ -169,7 +169,7 @@ extract_mean_colour = function(image, xmin, xmax, ymin, ymax){
 }
 
 ## Apply extract colour functions and create columns for red, green, and blue values
-df_2019_11251_11500_col <- df_2019_11251_11500 %>%
+df_2019_11501_11750_col <- df_2019_11501_11750 %>%
   mutate(mean_rgb = future_pmap(
     list(image_url, color_min_x, color_max_x, color_min_y, color_max_y),
     ~ extract_mean_colour(..1, ..2, ..3, ..4, ..5)
@@ -178,17 +178,17 @@ df_2019_11251_11500_col <- df_2019_11251_11500 %>%
   rename(red = mean_rgb_1,
          green = mean_rgb_2,
          blue = mean_rgb_3) %>%
-  dplyr::select(-c(valid_url, picture_info))
+  dplyr::select(-c(valid_url, picture_info, mean_rgb_4))
 
 ### Add new df to existing df -----
 
 ## Generate complete dataset
 df_2019_new <- df_2019_completed %>%
-  rbind(df_2019_11251_11500_col) #insert name of newly created df here
+  rbind(df_2019_11501_11750_col) #insert name of newly created df here
 
 ## Write new csv. Always change the last number in the name to match the highest
 ## number clicked through to date before writing
-write_csv(df_2019_new, "Data/sq_RGB_2019_1_11500.csv")
+write_csv(df_2019_new, "Data/sq_RGB_2019_1_11750.csv")
 
 ## Compile data from all years into master df
 df_colour <- df_2020_completed %>%
