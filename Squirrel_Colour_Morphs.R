@@ -126,7 +126,7 @@ url_check = function(url_in,t=2){
 
 ## Choose a subset to process and remove invalid URLs (also removes invalid file type: .gif)
 df_2019_noerrors <- df_2019 %>%
-  slice(11501:11750) %>%
+  slice(11751:12000) %>%
   filter(!str_detect(image_url, "gif$")) %>%
   mutate(valid_url = future_map_lgl(image_url, url_check)) %>%
   filter(valid_url == TRUE)
@@ -142,7 +142,7 @@ locate_box = function(image_url){
 }
 
 ## Apply it to a short list
-df_2019_11501_11750 = df_2019_noerrors %>%
+df_2019_11751_12000 = df_2019_noerrors %>%
   #slice() %>%
   rowwise() %>%
   mutate(picture_info = list(locate_box(image_url))) %>%
