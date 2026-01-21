@@ -69,7 +69,7 @@
 { #run this line to read all data files
   
   ## In-progress 2019 dataset (including RGBs)
-  df_2019_completed <- read_csv("Data/sq_RGB_2019_1_16000.csv")
+  df_2019_completed <- read_csv("Data/sq_RGB_2019_1_17000.csv")
   
   ## Completed dataset (including RGBs) with 20,594 usable records from 2020
   df_2020_completed <- read_csv("Data/sq_RGB_2020_df_1_31535.csv") %>%
@@ -126,7 +126,7 @@ url_check = function(url_in,t=2){
 
 ## Choose a subset to process and remove invalid URLs (also removes invalid file type: .gif)
 df_2019_noerrors <- df_2019 %>%
-  slice(16001:16250) %>%
+  slice(16751:17000) %>%
   filter(!str_detect(image_url, "gif$")) %>%
   mutate(valid_url = future_map_lgl(image_url, url_check)) %>%
   filter(valid_url == TRUE)
@@ -142,7 +142,7 @@ locate_box = function(image_url){
 }
 
 ## Apply it to a short list
-df_2019_16001_16250 = df_2019_noerrors %>%
+df_2019_16751_17000 = df_2019_noerrors %>%
   #slice() %>%
   rowwise() %>%
   mutate(picture_info = list(locate_box(image_url))) %>%
@@ -169,7 +169,7 @@ extract_mean_colour = function(image, xmin, xmax, ymin, ymax){
 }
 
 ## Apply extract colour functions and create columns for red, green, and blue values
-df_2019_16001_16250_col <- df_2019_16001_16250 %>%
+df_2019_16751_17000_col <- df_2019_16751_17000 %>%
   mutate(mean_rgb = future_pmap(
     list(image_url, color_min_x, color_max_x, color_min_y, color_max_y),
     ~ extract_mean_colour(..1, ..2, ..3, ..4, ..5)
@@ -184,14 +184,15 @@ df_2019_16001_16250_col <- df_2019_16001_16250 %>%
 
 ## Generate complete dataset
 df_2019_new <- df_2019_completed %>%
-  rbind(df_2019_16001_16250_col) #insert name of newly created df here
+  rbind(df_2019_16751_17000_col) #insert name of newly created df here
 
 ## Write new csv. Always change the last number in the name to match the highest
 ## number clicked through to date before writing
-write_csv(df_2019_new, "Data/sq_RGB_2019_1_16250.csv")
+write_csv(df_2019_new, "Data/sq_RGB_2019_1_17000.csv")
 
 ## Compile data from all years into master df
-df_colour <- df_2020_completed %>%
+df_colour <- df_2019_completed %>%
+  rbind(df_2020_completed) %>%
   rbind(df_2021_completed) %>%
   #include a new ID column to match with the popden and temp dfs
   mutate(ID = row_number())
@@ -322,15 +323,16 @@ df_col_class <- df_colour_popden_temp %>%
 ## Reduce df
 df_4model <- df_col_class %>%
   mutate(col_source = ifelse(is.na(sq_mpr_col), "rf", "sm")) %>%
-  dplyr::select(id, population_density, avg_winter_low_temp, col_class, col_source) %>%
+  dplyr::select(id, population_density, avg_winter_low_temp, longitude, col_class, col_source) %>%
   na.omit()
 
 ## Add log-centred versions of each predictor
 df_4model$pop_den_scaled <- scale(df_4model$population_density) %>% as.vector
 df_4model$winter_temp_scaled <- scale(df_4model$avg_winter_low_temp) %>% as.vector
+df_4model$longitude_scaled <- scale(df_4model$longitude) %>% as.vector
 
 ## Create model
-mod <- glm(col_class ~ pop_den_scaled + winter_temp_scaled + col_source,
+mod <- glmer(col_class ~ pop_den_scaled + winter_temp_scaled + longitude_scaled + pop_den_scaled:winter_temp_scaled + (1|col_source),
            family = binomial(link = "logit"),
            data = df_4model)
 
@@ -358,16 +360,21 @@ df_4model %>%
                                    ifelse(col_class == "melanic", 1,
                                           NA))) %>%
   filter(!is.na(col_class_binary)) %>%
-  ggplot(aes(x = avg_winter_low_temp, y = col_class_binary)) +
+  ggplot(aes(x = longitude, y = col_class_binary)) +
   geom_point() +
   geom_smooth(method = "lm") +
   facet_wrap(~col_source)
 
 ### Map data -----
 
+## Define colour palette
+color_pal <- colorFactor("RdYlBu", domain = NULL)
+
 df_col_class %>%
   mutate(col_source = ifelse(is.na(sq_mpr_col), "rf", "sm")) %>%
-  filter(col_source == "rf") %>%
+  dplyr::select(longitude, latitude, population_density, avg_winter_low_temp, col_source, col_class) %>%
+  #filter(col_source == "rf") %>%
+  na.omit() %>%
   leaflet() %>%
   addTiles() %>%
-  addCircleMarkers(~longitude, ~latitude, color = ~col_source, popup = ~col_source, fillOpacity = 0.01)
+  addCircles(~longitude, ~latitude, fillColor = ~color_pal(col_class), popup = ~col_source, fillOpacity = 0.01)
