@@ -62,11 +62,14 @@
   library(visreg) #for visualizing model fit
   library(lme4) #for mixed models
   library(leaflet) #for mapping
+  library(MuMIn) #for dredge
   }
 
 ### Read Data -----
 
 { #run this line to read all data files
+  
+  df_full <- read_csv("Data/full_dataset_2019_2021.csv")
   
   ## In-progress 2019 dataset (including RGBs)
   df_2019_completed <- read_csv("Data/sq_RGB_2019_1_17000.csv")
@@ -260,10 +263,12 @@ df_colour_popden_temp <- df_colour %>%
   mutate(avg_winter_low_temp = rowMeans(across(c(temp_jan20, temp_feb20, temp_jan21, temp_feb21)), na.rm = TRUE)) %>%
   left_join(df_sq_mpr)
 
+#write_csv(df_colour_popden_temp, "Data/full_dataset_2019_2021.csv")
+
 ### Train and test random forest -----
 
 ## Create filtered df
-df_4ml <- df_colour_popden_temp %>%
+df_4ml <- df_full %>%
   dplyr::select(red, green, blue, sq_mpr_col) %>%
   na.omit() %>%
   filter(sq_mpr_col %in% c('gray', 'melanic')) %>%
@@ -276,7 +281,7 @@ ind <- sample(2, nrow(df_4ml),
 training <- df_4ml[ind==1,]
 testing <- df_4ml[ind==2,]
 
-## Downsample the training set so n(gray) = n(melanic)
+## Downsample the training set
 min_n <- training %>%
   count(sq_mpr_col) %>%
   pull(n) %>%
@@ -287,8 +292,8 @@ training_balanced <- training %>%
   slice_sample(n = min_n) %>%
   ungroup()
 
-## Create model
-rf <- randomForest(sq_mpr_col ~ red + green + blue, data=training_balanced, ntree=10, importance=TRUE, na.action = na.roughfix)
+## Create model (use training_balanced for downsampled training set)
+rf <- randomForest(sq_mpr_col ~ red + green + blue, data=training, ntree=10, importance=TRUE, na.action = na.roughfix)
 
 ## Generate contingency table
 table(predict(rf),training_balanced$sq_mpr_col)
@@ -300,7 +305,7 @@ confusionMatrix(prediction, as.factor(testing$sq_mpr_col))
 ### Predict colour morphs -----
 
 ## Identify rows with missing colour morph class
-df_no_col <- df_colour_popden_temp %>%
+df_no_col <- df_full %>%
   filter(is.na(sq_mpr_col)) %>%
   dplyr::select(red, green, blue)
 
@@ -308,7 +313,7 @@ df_no_col <- df_colour_popden_temp %>%
 predicted_col_morphs <- predict(rf, newdata = df_no_col)
 
 ## Add predictions back into the original data
-df_col_class <- df_colour_popden_temp %>%
+df_col_class <- df_full %>%
   mutate(
     col_class = ifelse(
       is.na(sq_mpr_col),
@@ -322,8 +327,9 @@ df_col_class <- df_colour_popden_temp %>%
 
 ## Reduce df
 df_4model <- df_col_class %>%
-  mutate(col_source = ifelse(is.na(sq_mpr_col), "rf", "sm")) %>%
-  dplyr::select(id, population_density, avg_winter_low_temp, longitude, col_class, col_source) %>%
+  mutate(col_source = ifelse(is.na(sq_mpr_col), "rf", "sm"),
+         year = as.factor(year(observed_on))) %>%
+  dplyr::select(id, year, population_density, avg_winter_low_temp, longitude, col_class, col_source) %>%
   na.omit()
 
 ## Add log-centred versions of each predictor
@@ -332,11 +338,13 @@ df_4model$winter_temp_scaled <- scale(df_4model$avg_winter_low_temp) %>% as.vect
 df_4model$longitude_scaled <- scale(df_4model$longitude) %>% as.vector
 
 ## Create model
-mod <- glmer(col_class ~ pop_den_scaled + winter_temp_scaled + longitude_scaled + pop_den_scaled:winter_temp_scaled + (1|col_source),
+mod <- glm(col_class ~ pop_den_scaled * winter_temp_scaled + year + col_source + longitude_scaled,
            family = binomial(link = "logit"),
-           data = df_4model)
+           data = df_4model,
+           na.action = "na.fail")
 
 ## Evaluate model
+mod_dredged <- dredge(mod, rank = "BIC")
 summary(mod)
 Anova(mod)
 visreg(mod, scale = "response")
