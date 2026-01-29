@@ -65,6 +65,7 @@
   library(MuMIn) #for dredge
   library(performance) #for r^2
   library(mgcv) #for gam
+  library(sf) #for working with shapefiles
   }
 
 ### Read Data -----
@@ -256,6 +257,12 @@ df_temps_feb21 <- raster::extract(feb_2020,
                                   df=TRUE) %>%
   rename(temp_feb21 = wc2.1_2.5m_tmin_02)
 }
+
+### Identify reports in native range -----
+
+## Load range map
+range <- read_sf("Data/EGS_nativerange.shp")
+
 
 ### Compile complete dataset -----
 
