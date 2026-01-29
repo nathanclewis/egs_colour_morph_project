@@ -63,6 +63,8 @@
   library(lme4) #for mixed models
   library(leaflet) #for mapping
   library(MuMIn) #for dredge
+  library(performance) #for r^2
+  library(mgcv) #for gam
   }
 
 ### Read Data -----
@@ -71,7 +73,7 @@
   
   df_full <- read_csv("Data/full_dataset_2019_2021.csv")
   
-  ## In-progress 2019 dataset (including RGBs)
+  ## Complete dataset (including RGBs) from 2019
   df_2019_completed <- read_csv("Data/sq_RGB_2019_1_17000.csv")
   
   ## Completed dataset (including RGBs) with 20,594 usable records from 2020
@@ -265,71 +267,64 @@ df_colour_popden_temp <- df_colour %>%
 
 #write_csv(df_colour_popden_temp, "Data/full_dataset_2019_2021.csv")
 
-### Train and test random forest -----
+### Train and test random forest (k-fold) -----
 
 ## Create filtered df
 df_4ml <- df_full %>%
   dplyr::select(red, green, blue, sq_mpr_col) %>%
   na.omit() %>%
-  filter(sq_mpr_col %in% c('gray', 'melanic')) %>%
+  #filter(sq_mpr_col %in% c('gray', 'melanic')) %>%
   mutate(sq_mpr_col = factor(sq_mpr_col))
 
-## Split df into testing and training sets
-ind <- sample(2, nrow(df_4ml),
-              replace = TRUE,
-              prob = c(0.8, 0.2))
-training <- df_4ml[ind==1,]
-testing <- df_4ml[ind==2,]
+## Define cross-validation method
+train_control <- trainControl(
+  method = "cv",
+  number = 10, # k = 10 folds
+  #sampling = "down", # Downsample to balance classes within each fold
+  verboseIter = TRUE # Shows progress
+)
 
-## Downsample the training set
-min_n <- training %>%
-  count(sq_mpr_col) %>%
-  pull(n) %>%
-  min()
+## Train the model
+set.seed(1234) # for reproducibility
+rf_model_cv <- train(
+  sq_mpr_col ~ red + green + blue,
+  data = df_4ml,
+  method = "rf", # "rf" is the code for the randomForest package
+  trControl = train_control,
+  na.action = na.pass,
+  # Add importance for variable importance plots later
+  importance = TRUE
+)
 
-training_balanced <- training %>%
-  group_by(sq_mpr_col) %>%
-  slice_sample(n = min_n) %>%
-  ungroup()
-
-## Create model (use training_balanced for downsampled training set)
-rf <- randomForest(sq_mpr_col ~ red + green + blue, data=training, ntree=10, importance=TRUE, na.action = na.roughfix)
-
-## Generate contingency table
-table(predict(rf),training_balanced$sq_mpr_col)
-
-## Make predictions on testing set
-prediction <- predict(rf, testing)
-confusionMatrix(prediction, as.factor(testing$sq_mpr_col))
+## Results
+print(rf_model_cv)
+confusionMatrix(rf_model_cv)
 
 ### Predict colour morphs -----
 
-## Identify rows with missing colour morph class
-df_no_col <- df_full %>%
-  filter(is.na(sq_mpr_col)) %>%
+## Keep only rgb columns
+df_rgb <- df_full %>%
   dplyr::select(red, green, blue)
 
-## Predict the missing values
-predicted_col_morphs <- predict(rf, newdata = df_no_col)
+## Predict all values
+predicted_col_morphs <- predict(rf_model_cv, newdata = df_rgb)
 
 ## Add predictions back into the original data
 df_col_class <- df_full %>%
   mutate(
-    col_class = ifelse(
-      is.na(sq_mpr_col),
-      as.character(predicted_col_morphs),
-      as.character(sq_mpr_col)
-    ),
-    col_class = factor(col_class, levels = levels(training_balanced$sq_mpr_col))
-  )
+    col_class = as.character(predicted_col_morphs)) %>%
+  filter(col_class %in% c('melanic', 'gray'))
+
+## Check full set of predictions vs. sq mpr
+table(df_col_class$sq_mpr_col, df_col_class$col_class)
 
 ### Logistic regression -----
 
 ## Reduce df
 df_4model <- df_col_class %>%
-  mutate(col_source = ifelse(is.na(sq_mpr_col), "rf", "sm"),
-         year = as.factor(year(observed_on))) %>%
-  dplyr::select(id, year, population_density, avg_winter_low_temp, longitude, col_class, col_source) %>%
+  mutate(melanic_binary = ifelse(col_class == "melanic", 1, ifelse(col_class == "gray", 0, NA)),
+         melanic_binary = factor(melanic_binary)) %>%
+  dplyr::select(id, population_density, avg_winter_low_temp, longitude, col_class, melanic_binary) %>%
   na.omit()
 
 ## Add log-centred versions of each predictor
@@ -338,16 +333,19 @@ df_4model$winter_temp_scaled <- scale(df_4model$avg_winter_low_temp) %>% as.vect
 df_4model$longitude_scaled <- scale(df_4model$longitude) %>% as.vector
 
 ## Create model
-mod <- glm(col_class ~ pop_den_scaled * winter_temp_scaled + year + col_source + longitude_scaled,
-           family = binomial(link = "logit"),
-           data = df_4model,
-           na.action = "na.fail")
+mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + longitude_scaled + longitude_scaled:pop_den_scaled + pop_den_scaled:winter_temp_scaled,
+                family = binomial(link = "logit"),
+                data = df_4model,
+                na.action = "na.fail")
 
 ## Evaluate model
-mod_dredged <- dredge(mod, rank = "BIC")
 summary(mod)
 Anova(mod)
+confint(mod)
+r2(mod)
 visreg(mod, scale = "response")
+plot(mod)
+vif(mod)
 
 ### Plot raw data -----
 
@@ -359,8 +357,7 @@ df_4model %>%
   filter(!is.na(col_class_binary)) %>%
   ggplot(aes(x = population_density, y = col_class_binary)) +
   geom_point() +
-  geom_smooth(method = "lm") +
-  facet_wrap(~col_source)
+  geom_smooth(method = glm)
 
 ## Winter temperature
 df_4model %>%
@@ -368,21 +365,49 @@ df_4model %>%
                                    ifelse(col_class == "melanic", 1,
                                           NA))) %>%
   filter(!is.na(col_class_binary)) %>%
-  ggplot(aes(x = longitude, y = col_class_binary)) +
+  ggplot(aes(x = avg_winter_low_temp, y = col_class_binary)) +
   geom_point() +
-  geom_smooth(method = "lm") +
-  facet_wrap(~col_source)
+  geom_smooth()
 
 ### Map data -----
 
-## Define colour palette
-color_pal <- colorFactor("RdYlBu", domain = NULL)
+# Data preparation
+data_to_map <- df_full %>%
+  mutate(col_class = as.character(predicted_col_morphs))
+  #dplyr::select(longitude, latitude, col_class)
 
-df_col_class %>%
-  mutate(col_source = ifelse(is.na(sq_mpr_col), "rf", "sm")) %>%
-  dplyr::select(longitude, latitude, population_density, avg_winter_low_temp, col_source, col_class) %>%
-  #filter(col_source == "rf") %>%
-  na.omit() %>%
-  leaflet() %>%
+# Create the base map
+leaflet(data_to_map) %>%
   addTiles() %>%
-  addCircles(~longitude, ~latitude, fillColor = ~color_pal(col_class), popup = ~col_source, fillOpacity = 0.01)
+  # Add MELANIC squirrels as one group
+  addCircles(
+    data = subset(data_to_map, col_class == "melanic"),
+    ~longitude, ~latitude,
+    color = "black",
+    group = "Melanic",
+    popup = "Melanic Squirrel",
+    fillOpacity = 0.5, radius = 10, stroke = FALSE
+  ) %>%
+  # Add GREY squirrels as another group
+  addCircles(
+    data = subset(data_to_map, col_class == "gray"),
+    ~longitude, ~latitude,
+    color = "grey",
+    group = "Grey",
+    popup = "Grey Squirrel",
+    fillOpacity = 0.5, radius = 10, stroke = FALSE
+  ) %>%
+  # Add OTHER squirrels as another group
+  addCircles(
+    data = subset(data_to_map, col_class == "other"),
+    ~longitude, ~latitude,
+    color = "green",
+    group = "Other",
+    popup = "Other Squirrel",
+    fillOpacity = 0.5, radius = 10, stroke = FALSE
+  ) %>%
+  # Add a controller to turn layers on and off
+  addLayersControl(
+    overlayGroups = c("Melanic", "Grey", "Other"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
