@@ -399,7 +399,7 @@ r2(mod)
 visreg(mod, scale = "response")
 plot(mod)
 vif(mod)
-cor(df_4model[8:10])
+cor(df_4model[9:12])
 
 ### Plot raw data -----
 
@@ -422,6 +422,26 @@ df_4model %>%
   ggplot(aes(x = avg_winter_low_temp, y = col_class_binary)) +
   geom_point() +
   geom_smooth()
+
+## Developed land
+df_4model %>%
+  mutate(col_class_binary = ifelse(col_class == "gray", 0,
+                                   ifelse(col_class == "melanic", 1,
+                                          NA))) %>%
+  filter(!is.na(col_class_binary)) %>%
+  ggplot(aes(x = developed, y = col_class_binary)) +
+  geom_point() +
+  geom_smooth(method = "glm")
+
+## Forest cover
+df_4model %>%
+  mutate(col_class_binary = ifelse(col_class == "gray", 0,
+                                   ifelse(col_class == "melanic", 1,
+                                          NA))) %>%
+  filter(!is.na(col_class_binary)) %>%
+  ggplot(aes(x = forest, y = col_class_binary)) +
+  geom_point() +
+  geom_smooth(method = "glm")
 
 ### Map data -----
 
