@@ -295,6 +295,14 @@ df_reports_native <- st_join(sf_reports, range_native, join = st_within) %>%
 ## Read land cover dataset
 df_LC <- read_csv("Data/NL_sq_LC_data.csv") %>%
   rename(id = ID) %>%
+  mutate(forest = TEMPERATE_OR_SUBPOLAR_NEEDLEAF_FOREST + SUBPOLAR_TAIGA_NEEDLELEAF_FOREST + TROPICAL_OR_SUBTROPICAL_BROADLEAF_EVERGREEN_FOREST + TROPICAL_OR_SUBTROPICAL_BROADLEAF_DECIDUOUS_FOREST + TEMPERATE_OR_SUBPOLAR_BROADLEAF_DECIDUOUS_FOREST + MIXED_FOREST,
+         shrubland = TROPICAL_OR_SUBTROPICAL_SHRUBLAND + TEMPERATE_OR_SUBPOLAR_SHRUBLAND + SUBPOLAR_OR_POLAR_SHRUBLAND_LICHEN_MOSS,
+         grassland = TROPICAL_OR_SUBTROPICAL_GRASSLAND + TEMPERATE_OR_SUBPOLAR_GRASSLAND + SUBPOLAR_OR_POLAR_GRASSLAND_LICHEN_MOSS,
+         barren = BARREN_LAND + SUBPOLAR_OR_POLAR_BARREN_LICHEN_MOSS,
+         wetland = WETLAND,
+         cropland = CROPLAND,
+         developed = URBAN_AND_BUILT_UP
+         ) %>%
   dplyr::select(-c(A_))
 
 ### Compile complete dataset -----
@@ -366,18 +374,19 @@ df_4model <- df_col_class %>%
   mutate(melanic_binary = ifelse(col_class == "melanic", 1, ifelse(col_class == "gray", 0, NA)),
          melanic_binary = factor(melanic_binary),
          introduced = ifelse(native == "Y", "N", "Y")) %>%
-  dplyr::select(id, population_density, avg_winter_low_temp, longitude, introduced, col_class, melanic_binary) %>%
+  dplyr::select(id, population_density, avg_winter_low_temp, introduced, forest, developed, col_class, melanic_binary) %>%
   na.omit()
 
 ## Add log-centred versions of each predictor
 df_4model$pop_den_scaled <- scale(df_4model$population_density) %>% as.vector
 df_4model$winter_temp_scaled <- scale(df_4model$avg_winter_low_temp) %>% as.vector
-df_4model$longitude_scaled <- scale(df_4model$longitude) %>% as.vector
+df_4model$forest_scaled <- scale(df_4model$forest) %>% as.vector
+df_4model$developed_scaled <- scale(df_4model$developed) %>% as.vector
 
 #write_csv(df_4model, "Data/final_dataset.csv")
 
 ## Create model
-mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + introduced + pop_den_scaled:introduced + winter_temp_scaled:introduced + pop_den_scaled:winter_temp_scaled,
+mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + introduced + forest_scaled + developed_scaled + pop_den_scaled:introduced + winter_temp_scaled:introduced + pop_den_scaled:winter_temp_scaled + forest_scaled:developed_scaled,
                 family = binomial(link = "logit"),
                 data = df_4model,
                 na.action = "na.fail")
