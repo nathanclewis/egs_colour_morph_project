@@ -74,6 +74,8 @@
   
   df_full <- read_csv("Data/full_dataset_2019_2021.csv")
   
+  df_final_dataset <- read_csv("Data/final_dataset.csv")
+  
   ## Complete dataset (including RGBs) from 2019
   df_2019_completed <- read_csv("Data/sq_RGB_2019_1_17000.csv")
   
@@ -263,11 +265,35 @@ df_temps_feb21 <- raster::extract(feb_2020,
 ## Load range map
 range <- read_sf("Data/EGS_nativerange.shp")
 
+## Plot map
+ggplot(range) +
+  geom_sf() +
+  geom_point(data = df_col_class, aes(x = longitude, y = latitude, col = col_class)) +
+  theme_bw()
+
+## Assign native status to range
+range_native <- range %>%
+  mutate(native = "Y")
+
+## Create sf for reports
+sf_reports <- st_as_sf(
+  df_colour,
+  coords = c("longitude", "latitude"),
+  crs = 4326,   # WGS84
+  remove = FALSE
+)
+
+## Combine reports and native range objects
+df_reports_native <- st_join(sf_reports, range_native, join = st_within) %>%
+  st_drop_geometry() %>%
+  mutate(native = ifelse(is.na(native), "N", native)) %>%
+  as.data.frame() %>%
+  dplyr::select(1:13,42)
 
 ### Compile complete dataset -----
 
 df_colour_popden_temp <- df_colour %>%
-  full_join(c(df_popden, df_temps_jan20, df_temps_feb20, df_temps_jan21, df_temps_feb21), copy = TRUE) %>%
+  full_join(c(df_popden, df_temps_jan20, df_temps_feb20, df_temps_jan21, df_temps_feb21, df_reports_native), copy = TRUE) %>%
   dplyr::select(-c(ID.1,ID.2,ID.3,ID.4)) %>%
   mutate(avg_winter_low_temp = rowMeans(across(c(temp_jan20, temp_feb20, temp_jan21, temp_feb21)), na.rm = TRUE)) %>%
   left_join(df_sq_mpr)
@@ -330,8 +356,9 @@ table(df_col_class$sq_mpr_col, df_col_class$col_class)
 ## Reduce df
 df_4model <- df_col_class %>%
   mutate(melanic_binary = ifelse(col_class == "melanic", 1, ifelse(col_class == "gray", 0, NA)),
-         melanic_binary = factor(melanic_binary)) %>%
-  dplyr::select(id, population_density, avg_winter_low_temp, longitude, col_class, melanic_binary) %>%
+         melanic_binary = factor(melanic_binary),
+         introduced = ifelse(native == "Y", "N", "Y")) %>%
+  dplyr::select(id, population_density, avg_winter_low_temp, longitude, introduced, col_class, melanic_binary) %>%
   na.omit()
 
 ## Add log-centred versions of each predictor
@@ -339,8 +366,10 @@ df_4model$pop_den_scaled <- scale(df_4model$population_density) %>% as.vector
 df_4model$winter_temp_scaled <- scale(df_4model$avg_winter_low_temp) %>% as.vector
 df_4model$longitude_scaled <- scale(df_4model$longitude) %>% as.vector
 
+#write_csv(df_4model, "Data/final_dataset.csv")
+
 ## Create model
-mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + longitude_scaled + longitude_scaled:pop_den_scaled + pop_den_scaled:winter_temp_scaled,
+mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + introduced + pop_den_scaled:introduced + winter_temp_scaled:introduced + pop_den_scaled:winter_temp_scaled,
                 family = binomial(link = "logit"),
                 data = df_4model,
                 na.action = "na.fail")
@@ -353,6 +382,7 @@ r2(mod)
 visreg(mod, scale = "response")
 plot(mod)
 vif(mod)
+cor(df_4model[8:10])
 
 ### Plot raw data -----
 
