@@ -68,7 +68,7 @@
   library(sf) #for working with shapefiles
   }
 
-### Read Data -----
+### Read Squirrel Data -----
 
 { #run this line to read all data files
   
@@ -290,12 +290,20 @@ df_reports_native <- st_join(sf_reports, range_native, join = st_within) %>%
   as.data.frame() %>%
   dplyr::select(1:13,42)
 
+### Upload land cover data -----
+
+## Read land cover dataset
+df_LC <- read_csv("Data/NL_sq_LC_data.csv") %>%
+  rename(id = ID) %>%
+  dplyr::select(-c(A_))
+
 ### Compile complete dataset -----
 
 df_colour_popden_temp <- df_colour %>%
   full_join(c(df_popden, df_temps_jan20, df_temps_feb20, df_temps_jan21, df_temps_feb21, df_reports_native), copy = TRUE) %>%
   dplyr::select(-c(ID.1,ID.2,ID.3,ID.4)) %>%
   mutate(avg_winter_low_temp = rowMeans(across(c(temp_jan20, temp_feb20, temp_jan21, temp_feb21)), na.rm = TRUE)) %>%
+  left_join(df_LC) %>%
   left_join(df_sq_mpr)
 
 #write_csv(df_colour_popden_temp, "Data/full_dataset_2019_2021.csv")
