@@ -373,20 +373,23 @@ table(df_col_class$sq_mpr_col, df_col_class$col_class)
 df_4model <- df_col_class %>%
   mutate(melanic_binary = ifelse(col_class == "melanic", 1, ifelse(col_class == "gray", 0, NA)),
          melanic_binary = factor(melanic_binary),
-         introduced = ifelse(native == "Y", "N", "Y")) %>%
-  dplyr::select(id, population_density, avg_winter_low_temp, introduced, forest, developed, col_class, melanic_binary) %>%
+         introduced = ifelse(native == "Y", "N", "Y"),
+         total_LC = forest + shrubland + grassland + barren + wetland + cropland + developed,
+         prop_forest = forest/total_LC,
+         prop_developed = developed/total_LC) %>%
+  dplyr::select(id, population_density, avg_winter_low_temp, introduced, prop_forest, prop_developed, col_class, melanic_binary) %>%
   na.omit()
 
 ## Add log-centred versions of each predictor
 df_4model$pop_den_scaled <- scale(df_4model$population_density) %>% as.vector
 df_4model$winter_temp_scaled <- scale(df_4model$avg_winter_low_temp) %>% as.vector
-df_4model$forest_scaled <- scale(df_4model$forest) %>% as.vector
-df_4model$developed_scaled <- scale(df_4model$developed) %>% as.vector
+df_4model$prop_forest_scaled <- scale(df_4model$prop_forest) %>% as.vector
+df_4model$prop_developed_scaled <- scale(df_4model$prop_developed) %>% as.vector
 
 #write_csv(df_4model, "Data/final_dataset.csv")
 
 ## Create model
-mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + introduced + forest_scaled + developed_scaled + pop_den_scaled:introduced + winter_temp_scaled:introduced + pop_den_scaled:winter_temp_scaled + forest_scaled:developed_scaled,
+mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + introduced + prop_forest_scaled + prop_developed_scaled + pop_den_scaled:introduced + winter_temp_scaled:introduced + pop_den_scaled:winter_temp_scaled + pop_den_scaled:prop_developed_scaled + prop_forest_scaled:prop_developed_scaled,
                 family = binomial(link = "logit"),
                 data = df_4model,
                 na.action = "na.fail")
@@ -411,7 +414,9 @@ df_4model %>%
   filter(!is.na(col_class_binary)) %>%
   ggplot(aes(x = population_density, y = col_class_binary)) +
   geom_point() +
-  geom_smooth(method = glm)
+  geom_smooth(method = glm) +
+  labs(x = "Population Density", y = "Probability of Melanism") +
+  theme_bw()
 
 ## Winter temperature
 df_4model %>%
@@ -421,7 +426,9 @@ df_4model %>%
   filter(!is.na(col_class_binary)) %>%
   ggplot(aes(x = avg_winter_low_temp, y = col_class_binary)) +
   geom_point() +
-  geom_smooth()
+  geom_smooth(method = "glm") +
+  labs(x = "Average Winter Temperature (C)", y = "Probability of Melanism") +
+  theme_bw()
 
 ## Developed land
 df_4model %>%
@@ -431,7 +438,9 @@ df_4model %>%
   filter(!is.na(col_class_binary)) %>%
   ggplot(aes(x = developed, y = col_class_binary)) +
   geom_point() +
-  geom_smooth(method = "glm")
+  geom_smooth(method = "glm") +
+  labs(x = "Developed Land Cover", y = "Probability of Melanism") +
+  theme_bw()
 
 ## Forest cover
 df_4model %>%
@@ -441,7 +450,9 @@ df_4model %>%
   filter(!is.na(col_class_binary)) %>%
   ggplot(aes(x = forest, y = col_class_binary)) +
   geom_point() +
-  geom_smooth(method = "glm")
+  geom_smooth(method = "glm") +
+  labs(x = "Forest Cover", y = "Probability of Melanism") +
+  theme_bw()
 
 ### Map data -----
 
