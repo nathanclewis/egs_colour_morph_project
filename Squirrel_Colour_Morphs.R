@@ -66,6 +66,7 @@
   library(performance) #for r^2
   library(mgcv) #for gam
   library(sf) #for working with shapefiles
+  library(spdep) #for Moran's I test of spatial autocorrelation
   }
 
 ### Read Squirrel Data -----
@@ -377,7 +378,7 @@ df_4model <- df_col_class %>%
          total_LC = forest + shrubland + grassland + barren + wetland + cropland + developed,
          prop_forest = forest/total_LC,
          prop_developed = developed/total_LC) %>%
-  dplyr::select(id, population_density, avg_winter_low_temp, introduced, prop_forest, prop_developed, col_class, melanic_binary) %>%
+  dplyr::select(id, latitude, longitude, population_density, avg_winter_low_temp, introduced, prop_forest, prop_developed, col_class, melanic_binary) %>%
   na.omit()
 
 ## Add log-centred versions of each predictor
@@ -389,9 +390,13 @@ df_4model$prop_developed_scaled <- scale(df_4model$prop_developed) %>% as.vector
 #write_csv(df_4model, "Data/final_dataset.csv")
 
 ## Create model
-mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + introduced + prop_forest_scaled + prop_developed_scaled + pop_den_scaled:introduced + winter_temp_scaled:introduced + pop_den_scaled:winter_temp_scaled + pop_den_scaled:prop_developed_scaled + prop_forest_scaled:prop_developed_scaled,
+mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + introduced +
+             prop_forest_scaled + prop_developed_scaled + pop_den_scaled:introduced +
+             winter_temp_scaled:introduced + pop_den_scaled:winter_temp_scaled +
+             pop_den_scaled:prop_developed_scaled + prop_forest_scaled:prop_developed_scaled +
+             RAC,
                 family = binomial(link = "logit"),
-                data = df_4model,
+                data = df_final_dataset,
                 na.action = "na.fail")
 
 ## Evaluate model
@@ -400,9 +405,35 @@ Anova(mod)
 confint(mod)
 r2(mod)
 visreg(mod, scale = "response")
-plot(mod)
 vif(mod)
-cor(df_4model[9:12])
+cor(df_4model[11:14], method = "pearson")
+
+# Calculate model residuals
+mod_resid <- residuals(mod, type = "deviance")
+mod_resid_rac <- residuals(mod, type = "deviance")
+
+## Evaluate spatial autocorrelation with Moran's I
+
+# Find all neighbors within the specified distance range (currently within 1 lat/lon)
+coords <- as.matrix(df_final_dataset[,c("longitude", "latitude")])
+nb <- dnearneigh(coords, d1 = 0, d2 = 0.25)
+
+# Convert the neighbor object to a spatial weights list
+# The style="W" argument row-standardizes the weights (each row sums to 1)
+# 'zero.policy=TRUE' allows for data points that might have no neighbors
+listw <- nb2listw(nb, style = "W", zero.policy = TRUE)
+
+# Calculate the spatially lagged residuals (the autocovariate)
+rac_term <- lag.listw(listw, mod_resid)
+
+# Add RAC term to final dataset
+df_final_dataset$RAC <- rac_term
+
+# Run Moran's I test on the residuals 
+moran_result <- moran.test(mod_resid_rac, 
+                           listw = listw, 
+                           zero.policy = TRUE)
+print(moran_result)
 
 ### Plot raw data -----
 
@@ -436,7 +467,7 @@ df_4model %>%
                                    ifelse(col_class == "melanic", 1,
                                           NA))) %>%
   filter(!is.na(col_class_binary)) %>%
-  ggplot(aes(x = developed, y = col_class_binary)) +
+  ggplot(aes(x = prop_developed, y = col_class_binary)) +
   geom_point() +
   geom_smooth(method = "glm") +
   labs(x = "Developed Land Cover", y = "Probability of Melanism") +
@@ -454,12 +485,92 @@ df_4model %>%
   labs(x = "Forest Cover", y = "Probability of Melanism") +
   theme_bw()
 
+### Plot confidence intervals -----
+
+## Plot confidence intervals
+{
+  # List of variables in each model
+  variables <- c("Intercept", "Human Population Density", "Average Winter Temperature",
+                         "Non-Native Range", "Forest Cover", "Developed Land Cover", "Residual Autocovariate",
+                         "Population Density x Non-Native Range", "Winter Temperature x Non-Native Range",
+                         "Population Density x Winter Temperature", "Population Density x Developed Land",
+                         "Forest Cover x Developed Land")
+  
+  # List of coefficients
+  coefficients <- c(-2.13, 0.19, -0.88, 0.98, -0.01, 0.04, 2.36, -0.20, 0.44, 0.09, 0.03, 0.09)
+  
+  # Desired plotting order
+  var_levels <- c("Population Density x Developed Land",
+                  "Population Density x Winter Temperature",
+                  "Forest Cover x Developed Land",
+                  "Population Density x Non-Native Range",
+                  "Winter Temperature x Non-Native Range",
+                  "Forest Cover",
+                  "Developed Land Cover",
+                  "Human Population Density",
+                  "Average Winter Temperature",
+                  "Non-Native Range",
+                  "Residual Autocovariate",
+                  "Intercept")
+  
+  # Build tidy CI table and plot
+  p_conf_ints <- bind_rows(
+    as_tibble(confint(mod)) %>%
+      cbind(Variable = variables,
+            Coefficient = coefficients) %>%
+      pivot_longer(`2.5 %`:`97.5 %`,
+                   names_to = "Level",
+                   values_to = "CL")) %>%
+    mutate(
+      Variable = factor(Variable, levels = var_levels),
+      y   = as.numeric(Variable)) %>%
+    group_by(Variable, y) %>%
+    summarise(
+      Lower = min(CL),
+      Upper = max(CL),
+      Coefficient = unique(Coefficient),
+      .groups = "drop"
+    ) %>%
+    ggplot(aes(y = y)) +
+    geom_segment(aes(x = Lower, xend = Upper, yend = y),
+                 linewidth = 2, lineend = "square") +
+    geom_point(aes(x = Coefficient),
+               size = 5, alpha = 0.5) +
+    geom_vline(xintercept = 0, linetype = "dashed") +
+    geom_hline(yintercept = c(5.5, 10.5)) +
+    geom_text(
+      data = tibble(
+        x = c(-2.5, -2.5, -2.5),
+        y = c(5.3, 10.3, 12.5),
+        label = c("Interactions",
+                  "Main Effects",
+                  "Intercept and RAC")
+      ),
+      aes(x = x, y = y, label = label),
+      inherit.aes = FALSE,
+      size = 5,
+      hjust = 0
+    ) +
+    scale_y_continuous(
+      breaks = unique(as.numeric(factor(var_levels, levels = var_levels))),
+      labels = var_levels
+    ) +
+    scale_x_continuous(breaks = c(-6, -4, -2, 0, 2, 4, 6)) +
+    labs(x = "95% Confidence Intervals", y = "") +
+    theme_classic() +
+    theme(
+      legend.position = "right",
+      axis.text = element_text(size = 18),
+      axis.title = element_text(size = 18),
+      legend.text = element_text(size = 18),
+      legend.title = element_blank()); p_conf_ints
+  }
+
 ### Map data -----
 
 # Data preparation
 data_to_map <- df_full %>%
   mutate(col_class = as.character(predicted_col_morphs))
-  #dplyr::select(longitude, latitude, col_class)
 
 # Create the base map
 leaflet(data_to_map) %>%
