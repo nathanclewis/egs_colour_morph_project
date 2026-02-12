@@ -568,16 +568,12 @@ df_4model %>%
 
 ### Map data -----
 
-# Data preparation
-data_to_map <- df_full %>%
-  mutate(col_class = as.character(predicted_col_morphs))
-
 # Create the base map
-leaflet(data_to_map) %>%
+leaflet(df_final_dataset) %>%
   addTiles() %>%
   # Add MELANIC squirrels as one group
   addCircles(
-    data = subset(data_to_map, col_class == "melanic"),
+    data = subset(df_final_dataset, col_class == "melanic"),
     ~longitude, ~latitude,
     color = "black",
     group = "Melanic",
@@ -586,7 +582,7 @@ leaflet(data_to_map) %>%
   ) %>%
   # Add GREY squirrels as another group
   addCircles(
-    data = subset(data_to_map, col_class == "gray"),
+    data = subset(df_final_dataset, col_class == "gray"),
     ~longitude, ~latitude,
     color = "grey",
     group = "Grey",
@@ -595,7 +591,7 @@ leaflet(data_to_map) %>%
   ) %>%
   # Add OTHER squirrels as another group
   addCircles(
-    data = subset(data_to_map, col_class == "other"),
+    data = subset(df_final_dataset, col_class == "other"),
     ~longitude, ~latitude,
     color = "green",
     group = "Other",
