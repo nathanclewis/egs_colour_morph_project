@@ -66,6 +66,7 @@
   library(performance) #for r^2
   library(mgcv) #for gam
   library(sf) #for working with shapefiles
+  library(terra) #for working with spatial rasters
   library(spdep) #for Moran's I test of spatial autocorrelation
   }
 
@@ -317,7 +318,7 @@ df_colour_popden_temp <- df_colour %>%
 
 #write_csv(df_colour_popden_temp, "Data/full_dataset_2019_2021.csv")
 
-### Train and test random forest (k-fold) -----
+### Train and test random forest (k-fold cv) -----
 
 ## Create filtered df
 df_4ml <- df_full %>%
@@ -603,3 +604,102 @@ leaflet(df_final_dataset) %>%
     overlayGroups = c("Melanic", "Grey", "Other"),
     options = layersControlOptions(collapsed = FALSE)
   )
+
+### Predict North America-wide probability of melanism -----
+
+## Identify most parsimonious model for prediction
+mod_dredged <- dredge(mod, rank = "BIC")
+
+## Create most parsimonious model
+mod_parsimonious <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + introduced +
+                          pop_den_scaled:introduced + winter_temp_scaled:introduced + RAC,
+                        family = binomial(link = "logit"),
+                        data = df_final_dataset,
+                        na.action = "na.fail")
+
+## Evaluate most parsimonious model
+summary(mod_parsimonious)
+r2(mod_parsimonious)
+
+## Create minimum convex polygon (MCP) of all squirrel reports
+
+# Convert to a spatial sf object
+sf_final_dataset <- st_as_sf(df_final_dataset, coords = c("longitude", "latitude"), crs = 4326)
+
+# Create the MCP
+mcp <- sf_final_dataset %>%
+  st_combine() %>% #count all points as one group to make a single polygon
+  st_convex_hull() #create MCP
+
+# Visualize MCP
+plot(st_geometry(sf_final_dataset), col = "blue", pch = 16)
+plot(mcp, add = TRUE, border = "red", lwd = 2)
+
+## Create grid cells
+
+# Project your MCP to Albers Equal Area (as established)
+mcp_projected <- st_transform(mcp, "ESRI:102008")
+
+# Make the MCP a SpatVector
+mcp_vect <- vect(mcp_projected)
+
+# Create a "Template Raster"
+grid_template <- rast(mcp_vect, res = 1000) # 1000m = 1km
+
+## Extract human population density values
+
+# Project the Population Data
+# Instead of extracting points, this projects the whole population raster to match the 1km Albers grid
+# 'method = "sum"' ensures that if multiple pixels fit in one cell, their population is added together as a weighted average
+pop_1km <- project(pop_den_2020, grid_template, method = "sum")
+
+# Clip to the MCP
+pop_grid <- mask(pop_1km, mcp_vect)
+
+# Visualize
+plot(pop_grid, main = "Population Density (1km Grid)")
+
+# Convert the final population raster to a data frame
+df_pred_melanism <- as.data.frame(pop_grid, xy = TRUE, na.rm = TRUE)
+
+# To get Lat/Lon, treat the X/Y points as a spatial object 
+# and transform them back to WGS84 (EPSG: 4326)
+coords_projected <- df_pred_melanism[, c("x", "y")]
+
+# Create a temporary SpatVector of your grid centers
+v <- vect(coords_projected, geom = c("x", "y"), crs = crs(pop_grid))
+
+# Transform to Lat/Lon
+v_latlon <- project(v, "EPSG:4326")
+
+# Add the Lat/Lon back to the main data frame
+df_pred_melanism$longitude <- crds(v_latlon)[, 1]
+df_pred_melanism$latitude  <- crds(v_latlon)[, 2]
+
+# Rename the Albers columns to avoid confusion
+colnames(df_pred_melanism)[1:2] <- c("albers_x", "albers_y")
+
+## Extract average winter daily minimum temperature
+
+# Convert the 'raster' objects to 'terra' objects
+tmin_list <- list(jan_2020, feb_2020, jan_2021, feb_2021)
+tmin_stack <- rast(lapply(tmin_list, rast))
+
+# Crop the stack to the MCP
+winter_stack_cropped <- crop(tmin_stack, mcp_vect)
+
+# Calculate the mean on only the cropped area
+winter_low_daily_avg <- mean(winter_stack_cropped)
+
+# Project the temperature average to match your 1km Albers grid
+# Use 'bilinear' here because temperature is a continuous gradient
+temp_1km <- project(winter_low_daily_avg, pop_grid, method = "bilinear")
+
+# Create a SpatVector of the points in df_pred_melanism
+v_points <- vect(df_pred_melanism, geom = c("albers_x", "albers_y"), crs = crs(pop_grid))
+
+# Extract the temperature values exactly at those point locations
+temp_values <- terra::extract(temp_1km, v_points)
+
+# Add the values to your data frame
+df_pred_melanism$avg_winter_daily_low <- temp_values[, 2]
