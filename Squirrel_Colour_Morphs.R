@@ -40,7 +40,6 @@
 
 ### Download packages -----
 
-## For EBImage
 {
   install.packages(c("BiocManager", "tidyverse", "furrr", "geodata", "raster", "randomForest", "caret", "car", "visreg", "lme4", "leaflet",
                      "MuMIn", "performance", "sf", "terra", "spdep"))
