@@ -42,7 +42,8 @@
 
 ## For EBImage
 {
-  install.packages("BiocManager")
+  install.packages(c("BiocManager", "tidyverse", "furrr", "geodata", "raster", "randomForest", "caret", "car", "visreg", "lme4", "leaflet",
+                     "MuMIn", "performance", "sf", "terra", "spdep"))
   BiocManager::install("EBImage")
 }
 
@@ -64,7 +65,6 @@
   library(leaflet) #for mapping
   library(MuMIn) #for dredge
   library(performance) #for r^2
-  library(mgcv) #for gam
   library(sf) #for working with shapefiles
   library(terra) #for working with spatial rasters
   library(spdep) #for Moran's I test of spatial autocorrelation
@@ -703,3 +703,6 @@ temp_values <- terra::extract(temp_1km, v_points)
 
 # Add the values to your data frame
 df_pred_melanism$avg_winter_daily_low <- temp_values[, 2]
+
+# Visualize
+plot(df_pred_melanism$avg_winter_daily_low, main = "Average Winter Daily Minimum Temperature (1km Grid)")
