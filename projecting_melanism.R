@@ -152,6 +152,30 @@ df_pred_melanism$introduced <- ifelse(is.na(joined_status$native), "Y", "N")
 ## Clean up to free up RAM
 rm(points_v, range_v, joined_status)
 
+### Calculate RAC -----
+
+## Make a SpatVector from the training dataset
+train_v <- vect(df_4_top_model, geom = c("longitude", "latitude"), crs = "EPSG:4326")
+
+## Project train_v to Albers grid
+train_v_proj <- project(train_v, "ESRI:102008")
+
+## Interpolate the RAC values across the entire grid
+
+RAC_raster <- interpIDW(pop_grid, train_v_proj, field = "RAC", near = 8, power = 4, radius = 10000)
+
+## Extract RAC values for all cells
+RAC_extracted_all <- values(RAC_raster, na.rm = FALSE)
+
+## Extract the population values for the grid
+all_pop_values <- values(pop_grid, na.rm = FALSE)
+
+## Filter the RAC values using the same mask as for the pop data
+RAC_extracted_subset <- RAC_extracted_all[!is.na(all_pop_values)]
+
+## Add to the df
+df_pred_melanism$RAC_extracted <- RAC_extracted_subset
+
 ### Re-scale grid data to match the model scaling -----
 
 ## Extract mean and SD from the complete squirrel dataset
@@ -162,13 +186,32 @@ pop_sd <- sd(df_4_top_model$population_density, na.rm = TRUE)
 temp_mean <- mean(df_4_top_model$avg_winter_low_temp, na.rm = TRUE)
 temp_sd <- sd(df_4_top_model$avg_winter_low_temp, na.rm = TRUE)
 
+RAC_mean <- mean(df_4_top_model$RAC, na.rm = TRUE)
+RAC_sd <- sd(df_4_top_model$RAC, na.rm = TRUE)
+
 ## Apply scaling to the grid variables
 
 df_pred_melanism$pop_den_scaled <- (df_pred_melanism$population_density - pop_mean) / pop_sd
 df_pred_melanism$winter_temp_scaled <- (df_pred_melanism$avg_winter_daily_low - temp_mean) / temp_sd
+df_pred_melanism$RAC <- (df_pred_melanism$RAC_extracted - RAC_mean) / RAC_sd
+
+## Set all RAC values equal to 0
+df_pred_melanism$RAC[is.na(df_pred_melanism$RAC)] <- 0
+df_pred_melanism$RAC <- 0
+
 
 ### Project probability of melanism -----
 
 ## Predict probabilities
 
 df_pred_melanism$prob_melanic <- predict(mod_parsimonious, newdata = df_pred_melanism, type = "response")
+
+## Create a SpatVector from the predicted data
+pred_v <- vect(df_pred_melanism, geom = c("albers_x", "albers_y"), crs = "ESRI:102008")
+
+## Rasterize the probabilities
+prob_raster <- rasterize(pred_v, pop_grid, field = "prob_melanic")
+
+## Visualize
+colours <- colorRampPalette(c("lightgrey","black"))(100)
+plot(prob_raster, col = colours)
