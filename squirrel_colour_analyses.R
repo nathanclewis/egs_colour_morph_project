@@ -88,7 +88,7 @@ mod_resid_rac <- residuals(mod4RAC, type = "deviance")
 
 ## Evaluate spatial autocorrelation with Moran's I
 
-# Find all neighbors within the specified distance range (currently within 1 lat/lon)
+# Find all neighbors within the specified distance range
 coords <- as.matrix(df_4model[,c("longitude", "latitude")])
 nb <- dnearneigh(coords, d1 = 0, d2 = 0.25)
 
@@ -134,6 +134,8 @@ vif(mod)
 cor(df_4model[11:14], method = "pearson")
 
 ### Identify most parsimonious sub-model for prediction (to be used in projecting_melanism.R) -----
+
+## Create model without 
 
 mod_dredged <- dredge(mod, rank = "BIC")
 View(mod_dredged)
