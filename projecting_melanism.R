@@ -53,6 +53,10 @@ feb_2021 <- raster('Data/wc2.1_cruts4.06_2.5m_tmin_2020-2021/wc2.1_2.5m_tmin_202
 native_range <- read_sf("Data/EGS_nativerange.shp")%>%
   mutate(native = "Y") %>%
   dplyr::select(native)
+
+## Land cover
+land_cover 
+
 }
 
 ### Create most parsimonious model for prediction -----
