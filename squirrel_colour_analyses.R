@@ -37,7 +37,7 @@
   library("raster") #for reading temperature data
   library(randomForest) #for randomForest
   library(caret) #for confusion matrices
-  library(car) #for Anova
+  library(car) #for check_collinearity()
   library(visreg) #for visualizing model fit
   library(lme4) #for mixed models
   library(leaflet) #for mapping
@@ -163,30 +163,45 @@ write_csv(df_4model, "Data/data_4model.csv")
 #Read saved df with RAC
 df_4model <- read_csv("Data/data_4model.csv")
 
+### Assess predictors for correlation -----
+
+## Pearson's r
+cor(df_4model[c(11:14)])
+
+## ANOVA
+lm_native_wt <- lm(winter_temp_scaled ~ introduced,
+                   data = df_4model); summary(lm_native_wt)
+
+lm_native_hpd <- lm(pop_den_scaled ~ introduced,
+                   data = df_4model); summary(lm_native_hpd)
+
+lm_native_for <- lm(prop_forest_scaled ~ introduced,
+                    data = df_4model); summary(lm_native_for)
+
+lm_native_dev <- lm(prop_developed_scaled ~ introduced,
+                    data = df_4model); summary(lm_native_dev)
+
 ### Perform complete logistic regression -----
 
 ## Create model
 mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + introduced +
-                 prop_forest_scaled + prop_developed_scaled + pop_den_scaled:introduced +
-                 winter_temp_scaled:introduced + pop_den_scaled:winter_temp_scaled +
-                 pop_den_scaled:prop_developed_scaled + prop_forest_scaled:pop_den_scaled +
-                 winter_temp_scaled:prop_forest_scaled + RAC_20km,
+             prop_forest_scaled + prop_developed_scaled + pop_den_scaled:introduced +
+             winter_temp_scaled:introduced + pop_den_scaled:winter_temp_scaled +
+             prop_forest_scaled:pop_den_scaled + winter_temp_scaled:prop_forest_scaled +
+             RAC_20km,
                family = binomial(link = "logit"),
                data = df_4model,
                na.action = "na.fail")
 
 ## Evaluate model
 summary(mod)
-Anova(mod)
 confint(mod)
 r2(mod)
 visreg(mod, scale = "response")
-vif(mod, type = 'predictor')
+check_collinearity(mod)
 cor(df_4model[11:14], method = "pearson")
 
 ### Identify most parsimonious sub-model for prediction (to be used in projecting_melanism.R) -----
-
-## Create model without 
 
 mod_dredged <- dredge(mod, rank = "BIC")
 View(mod_dredged)
