@@ -60,13 +60,12 @@ df_4model <- df_full %>%
          melanic_binary = factor(melanic_binary),
          introduced = ifelse(native == "Y", "N", "Y"),
          total_LC = forest + shrubland + grassland + barren + wetland + cropland + developed,
-         prop_forest = forest/total_LC,
-         prop_developed = developed/total_LC) %>%
-  dplyr::select(id, latitude, longitude, population_density, avg_winter_low_temp, introduced, prop_forest, prop_developed, col_class, melanic_binary) %>%
+         prop_forest = forest/total_LC) %>%
+  dplyr::select(id, latitude, longitude, weighted_pop_density, avg_winter_low_temp, introduced, prop_forest, col_class, melanic_binary) %>%
   na.omit()
 
 ## Add log-centred versions of each predictor
-df_4model$pop_den_scaled <- scale(df_4model$population_density) %>% as.vector
+df_4model$pop_den_scaled <- scale(df_4model$weighted_pop_density) %>% as.vector
 df_4model$winter_temp_scaled <- scale(df_4model$avg_winter_low_temp) %>% as.vector
 df_4model$prop_forest_scaled <- scale(df_4model$prop_forest) %>% as.vector
 df_4model$prop_developed_scaled <- scale(df_4model$prop_developed) %>% as.vector
@@ -79,10 +78,9 @@ coords <- as.matrix(df_4model[, c("longitude", "latitude")])
 
 # Fit the baseline global model (no RAC)
 mod_baseline <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + introduced +
-                      prop_forest_scaled + prop_developed_scaled + pop_den_scaled:introduced +
+                      prop_forest_scaled + pop_den_scaled:introduced +
                       winter_temp_scaled:introduced + pop_den_scaled:winter_temp_scaled +
-                      pop_den_scaled:prop_developed_scaled + prop_forest_scaled:pop_den_scaled +
-                      winter_temp_scaled:prop_forest_scaled,
+                      prop_forest_scaled:pop_den_scaled,
                     family = binomial(link = "logit"),
                     data = df_4model,
                     na.action = "na.fail")
@@ -151,7 +149,7 @@ print(aic_table)
 # Extract the residuals from the top model
 winning_resids <- residuals(mod_RAC_20km, type = "deviance")
 
-# Run the Moran's I test using the 25 km spatial weights matrix we made earlier
+# Run the Moran's I test using the 20 km spatial weights matrix we made earlier
 moran_result <- moran.test(winning_resids, listw = listw_20km, zero.policy = TRUE)
 print(moran_result)
 
@@ -166,29 +164,14 @@ df_4model <- read_csv("Data/data_4model.csv")
 ### Assess predictors for correlation -----
 
 ## Pearson's r
-cor(df_4model[c(11:14)])
-
-## ANOVA
-lm_native_wt <- lm(winter_temp_scaled ~ introduced,
-                   data = df_4model); summary(lm_native_wt)
-
-lm_native_hpd <- lm(pop_den_scaled ~ introduced,
-                   data = df_4model); summary(lm_native_hpd)
-
-lm_native_for <- lm(prop_forest_scaled ~ introduced,
-                    data = df_4model); summary(lm_native_for)
-
-lm_native_dev <- lm(prop_developed_scaled ~ introduced,
-                    data = df_4model); summary(lm_native_dev)
+cor(df_4model[c(11:14)], method = "pearson")
 
 ### Perform complete logistic regression -----
 
 ## Create model
-mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + introduced +
-             prop_forest_scaled + prop_developed_scaled + pop_den_scaled:introduced +
-             winter_temp_scaled:introduced + pop_den_scaled:winter_temp_scaled +
-             prop_forest_scaled:pop_den_scaled + winter_temp_scaled:prop_forest_scaled +
-             RAC_20km,
+mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + prop_forest_scaled + 
+             introduced + pop_den_scaled:introduced + winter_temp_scaled:introduced + 
+             pop_den_scaled:winter_temp_scaled + pop_den_scaled:prop_forest_scaled + RAC_20km,
                family = binomial(link = "logit"),
                data = df_4model,
                na.action = "na.fail")

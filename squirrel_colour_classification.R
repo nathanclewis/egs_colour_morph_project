@@ -393,14 +393,15 @@ df_reports_native <- st_join(sf_reports, range_native, join = st_within) %>%
   dplyr::select(id, native)
 
 df_colour_landcover_popden_temp_range <- df_colour_landcover_popden_temp %>%
-  left_join(df_reports_native)
+  left_join(df_reports_native) %>%
+  left_join(df_sq_mpr)
 
 write_csv(df_colour_landcover_popden_temp_range, "Data/full_dataset_2019_2021.csv")
 
 ### Train and test random forest (k-fold cv) -----
 
-## Create filtered df
-df_4ml <- df_colour_popden_temp %>%
+## Create filtered df and add squirrel mapper data for training
+df_4ml <- df_colour_landcover_popden_temp_range %>%
   dplyr::select(red, green, blue, sq_mpr_col) %>%
   na.omit() %>%
   #filter(sq_mpr_col %in% c('gray', 'melanic')) %>%
@@ -433,14 +434,14 @@ confusionMatrix(rf_model_cv)
 ### Predict colour morphs -----
 
 ## Keep only rgb columns
-df_rgb <- df_colour_popden_temp %>%
+df_rgb <- df_colour_landcover_popden_temp_range %>%
   dplyr::select(red, green, blue)
 
 ## Predict all values
 predicted_col_morphs <- predict(rf_model_cv, newdata = df_rgb)
 
 ## Add predictions back into the original data
-df_col_class <- df_colour_popden_temp %>%
+df_col_class <- df_colour_landcover_popden_temp_range %>%
   mutate(
     col_class = as.character(predicted_col_morphs)) %>%
   filter(col_class %in% c('melanic', 'gray'))
