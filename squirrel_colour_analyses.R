@@ -47,6 +47,7 @@
   library(terra) #for working with spatial rasters
   library(spdep) #for Moran's I test of spatial autocorrelation
   library(AICcmodavg) #for model selection
+  library(broom.mixed) #for extracting model estimates and confidence intervals from mixed models
 }
 
 ### Read and prepare dataset -----
@@ -190,7 +191,7 @@ df_4model %>%
                                    ifelse(col_class == "melanic", 1,
                                           NA))) %>%
   filter(!is.na(col_class_binary)) %>%
-  ggplot(aes(x = population_density, y = col_class_binary, col = introduced)) +
+  ggplot(aes(x = weighted_pop_density, y = col_class_binary, col = introduced)) +
   geom_point() +
   geom_smooth(method = glm) +
   labs(x = "Population Density", y = "Probability of Melanism") +
@@ -208,18 +209,6 @@ df_4model %>%
   labs(x = "Average Winter Temperature (C)", y = "Probability of Melanism") +
   theme_bw()
 
-## Developed land
-df_4model %>%
-  mutate(col_class_binary = ifelse(col_class == "gray", 0,
-                                   ifelse(col_class == "melanic", 1,
-                                          NA))) %>%
-  filter(!is.na(col_class_binary)) %>%
-  ggplot(aes(x = prop_developed, y = col_class_binary, col = introduced)) +
-  geom_point() +
-  geom_smooth(method = "glm") +
-  labs(x = "Developed Land Cover", y = "Probability of Melanism") +
-  theme_bw()
-
 ## Forest cover
 df_4model %>%
   mutate(col_class_binary = ifelse(col_class == "gray", 0,
@@ -234,85 +223,45 @@ df_4model %>%
 
 ### Plot confidence intervals -----
 
-## Plot confidence intervals
-{
-  # List of variables in each model
-  variables <- c("Intercept", "Population Density", "Winter Temperature", "Non-Native Range", 
-                 "Forest Cover", "Residual Autocovariate", "Population Density x Non-Native Range",
-                 "Winter Temperature x Non-Native Range", "Population Density x Winter Temperature",
-                 "Population Density x Forest Cover", "Winter Temperature x Forest Cover")
-  
-  # List of coefficients
-  coefficients <- c(-2.08, 0.35, -0.90, 0.96, 0.05, 0.03, 2.35, -0.17, 0.41, 0.07, 0.02, 0.25, -0.11)
-  
-  # Desired plotting order
-  var_levels <- c("Population Density x Developed Land",
-                  "Winter Temperature x Forest Cover",
-                  "Population Density x Winter Temperature",
-                  "Population Density x Non-Native Range",
-                  "Population Density x Forest Cover",
-                  "Winter Temperature x Non-Native Range",
-                  "Developed Land Cover",
-                  "Forest Cover",
-                  "Population Density",
-                  "Winter Temperature",
-                  "Non-Native Range",
-                  "Residual Autocovariate",
-                  "Intercept")
-  
-  # Build tidy CI table and plot
-  p_conf_ints <- bind_rows(
-    as_tibble(confint(mod)) %>%
-      cbind(Variable = variables,
-            Coefficient = coefficients) %>%
-      pivot_longer(`2.5 %`:`97.5 %`,
-                   names_to = "Level",
-                   values_to = "CL")) %>%
-    mutate(
-      Variable = factor(Variable, levels = var_levels),
-      y   = as.numeric(Variable)) %>%
-    group_by(Variable, y) %>%
-    summarise(
-      Lower = min(CL),
-      Upper = max(CL),
-      Coefficient = unique(Coefficient),
-      .groups = "drop"
-    ) %>%
-    ggplot(aes(y = y)) +
-    geom_segment(aes(x = Lower, xend = Upper, yend = y),
-                 linewidth = 2, lineend = "square") +
-    geom_point(aes(x = Coefficient),
-               size = 4) +
-    geom_vline(xintercept = 0, linetype = "dashed") +
-    geom_hline(yintercept = c(6.5, 11.5)) +
-    geom_text(
-      data = tibble(
-        x = c(-2.2, -2.2, -2.2),
-        y = c(6.3, 11.3, 13.5),
-        label = c("Interactions",
-                  "Main Effects",
-                  "Intercept and RAC")
-      ),
-      aes(x = x, y = y, label = label),
-      inherit.aes = FALSE,
-      size = 5,
-      hjust = 0
-    ) +
-    scale_y_continuous(
-      breaks = unique(as.numeric(factor(var_levels, levels = var_levels))),
-      labels = var_levels
-    ) +
-    scale_x_continuous(breaks = c(-2, -1, 0, 1, 2),
-                       limits = c(-2.2, 2.5)) +
-    labs(x = "95% Confidence Intervals", y = "") +
-    theme_classic() +
-    theme(
-      legend.position = "right",
-      axis.text = element_text(size = 18),
-      axis.title = element_text(size = 18),
-      legend.text = element_text(size = 18),
-      legend.title = element_blank()); p_conf_ints
-}
+## Create df with confidence intervals
+
+df_plot_data <- tidy(mod, conf.int = TRUE) %>%
+    # Rename components for cleaner facet labels
+    mutate(term = fct_recode(term,
+                             `Intercept` = "(Intercept)",
+                             `Population density` = "pop_den_scaled",
+                             `Winter temperature` = "winter_temp_scaled",
+                             `Forest cover` = "prop_forest_scaled",
+                             `Non-native` = "introducedY",
+                             `Residual autocovariate` = "RAC_20km",
+                             `Population density x Non-native` = "pop_den_scaled:introducedY",
+                             `Winter temperature x Non-native` = "winter_temp_scaled:introducedY",
+                             `Population density x Winter temperature` = "pop_den_scaled:winter_temp_scaled",
+                             `Population density x Forest cover` = "pop_den_scaled:prop_forest_scaled")) %>%
+  filter(!term %in% c("Intercept", "Residual autocovariate"))
+
+
+#Create plot
+CI_plot <- ggplot(df_plot_data, aes(x = estimate, y = term)) +
+  # Add a vertical line at 0 for reference
+  geom_vline(xintercept = 0, linetype = "dashed", alpha = 0.5) +
+  # The "dodging" happens here to prevent overlap
+  geom_pointrange(aes(xmin = conf.low, xmax = conf.high),
+                  position = position_dodge(width = 0.6),
+                  size = 1) +
+  labs(x = "Coefficient Estimate (with 95% CI)",
+       y = NULL) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 22),
+        axis.text.y = element_text(size = 22),
+        axis.title.x = element_text(size = 22),
+        legend.text = element_text(size = 22),
+        legend.title = element_text(size = 22)) +
+  theme(panel.grid.minor = element_blank(),
+        strip.text = element_text(face = "bold", size = 22),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1));CI_plot
+
+#ggsave("CI_plot.png")
 
 ### Map reported sightings -----
 
