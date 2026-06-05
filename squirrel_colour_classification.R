@@ -204,6 +204,96 @@ df_colour <- df_2019_completed %>%
   #include a new ID column to match with the popden and temp dfs
   mutate(ID = row_number())
 
+### Upload land cover data -----
+
+# 1. Read the land cover file pointer
+rast_lc <- rast("C:/Users/Benson-Amram Lab/Desktop/Nathan/NA_NALCMS_landcover_2020v2_30m.tif")
+
+# Convert your original data frame points to an sf spatial object (WGS84)
+sf_squirrels <- st_as_sf(df_colour, coords = c("longitude", "latitude"), crs = 4326)
+
+# Transform to metric CRS (EPSG:2163) so 'dist = 1000' equals exactly 1 kilometer
+sf_squirrels_projected <- st_transform(sf_squirrels, crs = 2163)
+
+# Generate the 1km buffer zones
+sf_squirrel_buffers <- st_buffer(sf_squirrels_projected, dist = 1000)
+
+# 2. Project your buffer circles to match the Land Cover CRS
+# (We do the work in the raster's native coordinate system to prevent errors)
+sf_buffers_lc_crs <- st_transform(sf_squirrel_buffers, crs = crs(rast_lc))
+num_buffers <- nrow(sf_buffers_lc_crs)
+
+# 3. Create our blank results collector matrix
+categories <- c("forest", "shrubland", "grassland", "barren", "wetland", "cropland", "developed", "other")
+results_matrix <- matrix(0, nrow = num_buffers, ncol = length(categories))
+colnames(results_matrix) <- categories
+
+# 4. Loop through every single squirrel buffer individually
+for (i in 1:num_buffers) {
+  
+  if (i %% 100 == 0 || i == 1) {
+    message(paste0("Processing squirrel ", i, " of ", num_buffers, "..."))
+  }
+  
+  # Isolate exactly ONE buffer polygon
+  single_sf <- sf_buffers_lc_crs[i, ]
+  
+  # Generate a rapid internal grid of points inside this 1km buffer.
+  # Spacing them 30 meters apart perfectly mimics the raster grid layout!
+  internal_points <- st_sample(single_sf, size = 3500, type = "regular")
+  
+  if (length(internal_points) == 0) next
+  
+  # Extract raw coordinates matrix [X, Y]
+  coords <- st_coordinates(internal_points)
+  
+  # BYPASS FUNCTION: Convert X/Y coordinates directly into Raster Cell Numbers
+  # This acts as a direct memory lookup bypass
+  cell_numbers <- cellFromXY(rast_lc, coords)
+  
+  # Pull the raw values directly from the hard drive stream by cell index
+  raw_values <- rast_lc[cell_numbers][[1]]
+  
+  # Filter missing data out
+  raw_values <- raw_values[!is.na(raw_values)]
+  if (length(raw_values) == 0) next
+  
+  # Count the frequencies of land cover codes
+  val_counts <- table(raw_values)
+  single_props <- as.data.frame(val_counts)
+  names(single_props) <- c("lc_code", "cell_count")
+  
+  # Categorize and aggregate
+  single_props <- single_props %>%
+    mutate(
+      lc_code = as.numeric(as.character(lc_code)),
+      category = case_when(
+        lc_code %in% 1:6 ~ "forest",
+        lc_code %in% c(7, 8, 11) ~ "shrubland",
+        lc_code %in% c(9, 10, 12) ~ "grassland",
+        lc_code %in% c(16, 19) ~ "barren",
+        lc_code == 14 ~ "wetland",
+        lc_code == 15 ~ "cropland",
+        lc_code == 17 ~ "developed",
+        TRUE ~ "other"
+      )
+    ) %>%
+    group_by(category) %>%
+    summarize(total_cells = sum(cell_count), .groups = "drop") %>%
+    mutate(proportion = total_cells / sum(total_cells))
+  
+  # Pop the results into our matrix row
+  if (nrow(single_props) > 0) {
+    for (j in 1:nrow(single_props)) {
+      results_matrix[i, single_props$category[j]] <- single_props$proportion[j]
+    }
+  }
+}
+
+# 5. Bind data seamlessly back together
+df_lc_proportions <- as.data.frame(results_matrix)
+df_colour_landcover <- cbind(df_colour, df_lc_proportions)
+
 ### Generate human population density data -----
 
 {
@@ -214,21 +304,35 @@ df_colour <- df_2019_completed %>%
   min_lon <- -160.60
   
   ## Load human population density data
-  pop_den_2020 <- population(2020, res = 0.5, path = tempdir())
+  pop_den_2020 <- rast("Data/NA_PopulationDensity_2020.tif")
   
-  ## Map data
-  plot(pop_den_2020^0.1,
-       xlim = c(min_lon, max_lon),
-       ylim = c(min_lat, max_lat),
-       axes = TRUE)
+  # Match the buffer projections to the raster's native CRS before building the crop box
+  sf_buffers_raster_crs <- st_transform(sf_squirrel_buffers, crs = crs(pop_den_2020))
   
-  #Add points to the map
-  points(df_colour$longitude, df_colour$latitude, pch=19, cex=0.01, col=1)
+  # Turn the buffers into a terra SpatVector for optimized geometric operations
+  vect_buffers <- vect(sf_buffers_raster_crs)
   
-  #Extracting points from method directly above
-  df_popden <- raster::extract(pop_den_2020,
-                               df_colour[c("longitude","latitude")],
-                               df=TRUE)
+  # Compute the exact tight bounding box around your buffers and slice the raster
+  buffer_extent <- ext(vect_buffers)
+  cropped_pop_den <- crop(pop_den_2020, buffer_extent)
+  
+  # This extracts cell values intersecting the buffers along with their overlap coverage fractions
+  extracted_popden <- terra::extract(cropped_pop_den, vect_buffers, exact = TRUE, ID = TRUE)
+  
+  # Safely isolate the exact name of the population density data layer
+  layer_name <- names(cropped_pop_den)[1]
+  
+  # Calculate the final weighted averages
+  df_popden <- extracted_popden %>%
+    filter(!is.na(.data[[layer_name]])) %>%
+    group_by(ID) %>%
+    summarize(
+      weighted_pop_density = sum(.data[[layer_name]] * fraction) / sum(fraction)
+    )
+  
+  # Bind the resulting metrics vector back onto your original df_colour dataframe
+  df_colour_landcover_popden <- df_colour_landcover %>%
+    left_join(df_popden)
 }
 
 ### Generate winter temperature data -----
@@ -242,21 +346,26 @@ df_colour <- df_2019_completed %>%
   
   ## Extracting points from method directly above
   df_temps_jan20 <- raster::extract(jan_2020,
-                                    df_colour[c("longitude","latitude")],
+                                    df_colour_landcover_popden[c("longitude","latitude")],
                                     df=TRUE) %>%
     rename(temp_jan20 = wc2.1_2.5m_tmin_01)
   df_temps_jan21 <- raster::extract(jan_2021,
-                                    df_colour[c("longitude","latitude")],
+                                    df_colour_landcover_popden[c("longitude","latitude")],
                                     df=TRUE) %>%
     rename(temp_jan21 = wc2.1_2.5m_tmin_01)
   df_temps_feb20 <- raster::extract(feb_2020,
-                                    df_colour[c("longitude","latitude")],
+                                    df_colour_landcover_popden[c("longitude","latitude")],
                                     df=TRUE) %>%
     rename(temp_feb20 = wc2.1_2.5m_tmin_02)
   df_temps_feb21 <- raster::extract(feb_2020,
-                                    df_colour[c("longitude","latitude")],
+                                    df_colour_landcover_popden[c("longitude","latitude")],
                                     df=TRUE) %>%
     rename(temp_feb21 = wc2.1_2.5m_tmin_02)
+  
+  df_colour_landcover_popden_temp <- df_colour_landcover_popden %>%
+    left_join(c(df_temps_jan20, df_temps_feb20, df_temps_jan21, df_temps_feb21), copy = TRUE) %>%
+    mutate(avg_winter_low_temp = rowMeans(across(c(temp_jan20, temp_feb20, temp_jan21, temp_feb21)), na.rm = TRUE)) %>%
+    dplyr::select(-c(ID.1, ID.2, ID.3))
 }
 
 ### Identify reports in native range -----
@@ -264,19 +373,13 @@ df_colour <- df_2019_completed %>%
 ## Load range map
 range <- read_sf("Data/EGS_nativerange.shp")
 
-## Plot map
-ggplot(range) +
-  geom_sf() +
-  geom_point(data = df_colour, aes(x = longitude, y = latitude)) +
-  theme_bw()
-
 ## Assign native status to range
 range_native <- range %>%
   mutate(native = "Y")
 
 ## Create sf for reports
 sf_reports <- st_as_sf(
-  df_colour,
+  df_colour_landcover_popden_temp,
   coords = c("longitude", "latitude"),
   crs = 4326,   # WGS84
   remove = FALSE
@@ -287,33 +390,12 @@ df_reports_native <- st_join(sf_reports, range_native, join = st_within) %>%
   st_drop_geometry() %>%
   mutate(native = ifelse(is.na(native), "N", native)) %>%
   as.data.frame() %>%
-  dplyr::select(1:13,42)
+  dplyr::select(id, native)
 
-### Upload land cover data -----
+df_colour_landcover_popden_temp_range <- df_colour_landcover_popden_temp %>%
+  left_join(df_reports_native)
 
-## Read land cover dataset
-df_LC <- read_csv("Data/NL_sq_LC_data.csv") %>%
-  rename(id = ID) %>%
-  mutate(forest = TEMPERATE_OR_SUBPOLAR_NEEDLEAF_FOREST + SUBPOLAR_TAIGA_NEEDLELEAF_FOREST + TROPICAL_OR_SUBTROPICAL_BROADLEAF_EVERGREEN_FOREST + TROPICAL_OR_SUBTROPICAL_BROADLEAF_DECIDUOUS_FOREST + TEMPERATE_OR_SUBPOLAR_BROADLEAF_DECIDUOUS_FOREST + MIXED_FOREST,
-         shrubland = TROPICAL_OR_SUBTROPICAL_SHRUBLAND + TEMPERATE_OR_SUBPOLAR_SHRUBLAND + SUBPOLAR_OR_POLAR_SHRUBLAND_LICHEN_MOSS,
-         grassland = TROPICAL_OR_SUBTROPICAL_GRASSLAND + TEMPERATE_OR_SUBPOLAR_GRASSLAND + SUBPOLAR_OR_POLAR_GRASSLAND_LICHEN_MOSS,
-         barren = BARREN_LAND + SUBPOLAR_OR_POLAR_BARREN_LICHEN_MOSS,
-         wetland = WETLAND,
-         cropland = CROPLAND,
-         developed = URBAN_AND_BUILT_UP
-  ) %>%
-  dplyr::select(-c(A_))
-
-### Compile complete dataset -----
-
-df_colour_popden_temp <- df_colour %>%
-  full_join(c(df_popden, df_temps_jan20, df_temps_feb20, df_temps_jan21, df_temps_feb21, df_reports_native), copy = TRUE) %>%
-  dplyr::select(-c(ID.1,ID.2,ID.3,ID.4)) %>%
-  mutate(avg_winter_low_temp = rowMeans(across(c(temp_jan20, temp_feb20, temp_jan21, temp_feb21)), na.rm = TRUE)) %>%
-  left_join(df_LC) %>%
-  left_join(df_sq_mpr)
-
-#write_csv(df_colour_popden_temp, "Data/full_dataset_2019_2021.csv")
+write_csv(df_colour_landcover_popden_temp_range, "Data/full_dataset_2019_2021.csv")
 
 ### Train and test random forest (k-fold cv) -----
 
