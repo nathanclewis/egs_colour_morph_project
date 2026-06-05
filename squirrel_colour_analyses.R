@@ -68,7 +68,6 @@ df_4model <- df_full %>%
 df_4model$pop_den_scaled <- scale(df_4model$weighted_pop_density) %>% as.vector
 df_4model$winter_temp_scaled <- scale(df_4model$avg_winter_low_temp) %>% as.vector
 df_4model$prop_forest_scaled <- scale(df_4model$prop_forest) %>% as.vector
-df_4model$prop_developed_scaled <- scale(df_4model$prop_developed) %>% as.vector
 
 
 ### Calculate residual autocorrelation -----
@@ -164,7 +163,7 @@ df_4model <- read_csv("Data/data_4model.csv")
 ### Assess predictors for correlation -----
 
 ## Pearson's r
-cor(df_4model[c(11:14)], method = "pearson")
+cor(df_4model[c(10:12)], method = "pearson")
 
 ### Perform complete logistic regression -----
 
@@ -182,12 +181,6 @@ confint(mod)
 r2(mod)
 visreg(mod, scale = "response")
 check_collinearity(mod)
-cor(df_4model[11:14], method = "pearson")
-
-### Identify most parsimonious sub-model for prediction (to be used in projecting_melanism.R) -----
-
-mod_dredged <- dredge(mod, rank = "BIC")
-View(mod_dredged)
 
 ### Plot raw data -----
 
@@ -244,10 +237,9 @@ df_4model %>%
 ## Plot confidence intervals
 {
   # List of variables in each model
-  variables <- c("Intercept", "Population Density", "Winter Temperature",
-                 "Non-Native Range", "Forest Cover", "Developed Land Cover", "Residual Autocovariate",
-                 "Population Density x Non-Native Range", "Winter Temperature x Non-Native Range",
-                 "Population Density x Winter Temperature", "Population Density x Developed Land",
+  variables <- c("Intercept", "Population Density", "Winter Temperature", "Non-Native Range", 
+                 "Forest Cover", "Residual Autocovariate", "Population Density x Non-Native Range",
+                 "Winter Temperature x Non-Native Range", "Population Density x Winter Temperature",
                  "Population Density x Forest Cover", "Winter Temperature x Forest Cover")
   
   # List of coefficients
