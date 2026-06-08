@@ -237,7 +237,18 @@ df_plot_data <- tidy(mod, conf.int = TRUE) %>%
                              `Population density x Non-native` = "pop_den_scaled:introducedY",
                              `Winter temperature x Non-native` = "winter_temp_scaled:introducedY",
                              `Population density x Winter temperature` = "pop_den_scaled:winter_temp_scaled",
-                             `Population density x Forest cover` = "pop_den_scaled:prop_forest_scaled")) %>%
+                             `Population density x Forest cover` = "pop_den_scaled:prop_forest_scaled"),
+           term = fct_reorder(term,
+                              "Intercept",
+                              "Residual autocovariate",
+                              "Non-native",
+                              "Winter temperature",
+                              "Population density",
+                              "Forest cover",
+                              "Winter temperature x Non-native",
+                              "Population density x Non-native",
+                              "Population density x Forest cover",
+                              "Population density x Winter temperature")) %>%
   filter(!term %in% c("Intercept", "Residual autocovariate"))
 
 
