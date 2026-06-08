@@ -261,7 +261,7 @@ CI_plot <- ggplot(df_plot_data, aes(x = estimate, y = term)) +
         strip.text = element_text(face = "bold", size = 22),
         panel.border = element_rect(color = "black", fill = NA, linewidth = 1));CI_plot
 
-#ggsave("CI_plot.png")
+#ggsave("Figures/CI_plot.png")
 
 ### Map reported sightings -----
 
