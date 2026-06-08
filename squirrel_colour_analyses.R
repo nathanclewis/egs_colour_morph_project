@@ -70,7 +70,6 @@ df_4model$pop_den_scaled <- scale(df_4model$weighted_pop_density) %>% as.vector
 df_4model$winter_temp_scaled <- scale(df_4model$avg_winter_low_temp) %>% as.vector
 df_4model$prop_forest_scaled <- scale(df_4model$prop_forest) %>% as.vector
 
-
 ### Calculate residual autocorrelation -----
 
 ## Ensure coordinates are a matrix for spdep
@@ -238,7 +237,7 @@ df_plot_data <- tidy(mod, conf.int = TRUE) %>%
                              `Winter temperature x Non-native` = "winter_temp_scaled:introducedY",
                              `Population density x Winter temperature` = "pop_den_scaled:winter_temp_scaled",
                              `Population density x Forest cover` = "pop_den_scaled:prop_forest_scaled"),
-           term = fct_reorder(term,
+           term = fct_rev(fct_relevel(term,
                               "Intercept",
                               "Residual autocovariate",
                               "Non-native",
@@ -248,7 +247,7 @@ df_plot_data <- tidy(mod, conf.int = TRUE) %>%
                               "Winter temperature x Non-native",
                               "Population density x Non-native",
                               "Population density x Forest cover",
-                              "Population density x Winter temperature")) %>%
+                              "Population density x Winter temperature"))) %>%
   filter(!term %in% c("Intercept", "Residual autocovariate"))
 
 
@@ -272,7 +271,16 @@ CI_plot <- ggplot(df_plot_data, aes(x = estimate, y = term)) +
         strip.text = element_text(face = "bold", size = 22),
         panel.border = element_rect(color = "black", fill = NA, linewidth = 1));CI_plot
 
-#ggsave("Figures/CI_plot.png")
+ggsave("Figures/CI_plot.png")
+
+### Visreg plots -----
+
+## Human population density
+visreg(mod, xvar = "pop_den_scaled", by = "introduced", scale = "response", gg = TRUE,
+       xlab = "Human population density", ylab = "Probability of melanism") + 
+  facet_grid(. ~ introduced, labeller = as_labeller(c("N" = "Native", "Y" = "Non-native"))) +
+  theme_bw() +
+  ylim(c(0,0.3))
 
 ### Map reported sightings -----
 
@@ -310,4 +318,8 @@ leaflet(df_4model) %>%
   addLayersControl(
     overlayGroups = c("Melanic", "Grey", "Other"),
     options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  # Add shape for native range
+  addPolygons(
+    data = range
   )

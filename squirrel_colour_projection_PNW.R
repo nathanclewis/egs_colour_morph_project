@@ -1,0 +1,135 @@
+### Read libraries -----
+library(tidyverse)
+library(geodata)
+library(terra)   
+library(sf)
+library(tidyterra)
+
+### Read datasets -----
+
+## Full model dataset
+df_4_top_model <- read_csv("Data/data_4model.csv")
+
+## Model dataset as sf - UPDATED to local Pacific NW Projection (UTM Zone 10N: EPSG:26910)
+df_projected <- df_4_top_model %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
+  st_transform("EPSG:26910") %>%
+  mutate(
+    lon_utm = st_coordinates(geometry)[, 1],
+    lat_utm = st_coordinates(geometry)[, 2]
+  )
+
+## Load SpatRasters
+pop_den_2020 <- rast("Data/NA_PopulationDensity_2020.tif")
+
+jan_2020 <- rast('Data/wc2.1_cruts4.06_2.5m_tmin_2020-2021/wc2.1_2.5m_tmin_2020-01.tif')
+feb_2020 <- rast('Data/wc2.1_cruts4.06_2.5m_tmin_2020-2021/wc2.1_2.5m_tmin_2020-02.tif')
+jan_2021 <- rast('Data/wc2.1_cruts4.06_2.5m_tmin_2020-2021/wc2.1_2.5m_tmin_2021-01.tif')
+feb_2021 <- rast('Data/wc2.1_cruts4.06_2.5m_tmin_2020-2021/wc2.1_2.5m_tmin_2021-02.tif')
+
+## Load land cover
+rast_lc <- rast("C:/Users/Benson-Amram Lab/Desktop/Nathan/NA_NALCMS_landcover_2020v2_30m.tif") 
+
+### Create model for prediction -----
+
+mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + prop_forest_scaled + 
+             introduced + pop_den_scaled:introduced + winter_temp_scaled:introduced + 
+             pop_den_scaled:winter_temp_scaled + pop_den_scaled:prop_forest_scaled + RAC_20km,
+           family = binomial(link = "logit"),
+           data = df_4_top_model,
+           na.action = "na.fail")
+
+
+### Project across Pacific Northwest Region (Metro Vancouver & Greater Seattle) -----
+
+## Define bounding box for the PNW Target Zone
+# Longitude range: -123.4 (West of Vancouver Island edge / Olympic Peninsula) to -121.7 (East of Cascade Foothills)
+# Latitude range:  47.2 (South of Tacoma/Seattle suburbs) to 49.4 (North of Metro Vancouver / North Shore Mountains)
+pnw_bbox <- st_bbox(c(xmin = -123.4, ymin = 47.2, xmax = -121.7, ymax = 49.4), 
+                    crs = st_crs(4326))
+
+# Convert bounding box to local UTM Zone 10N (EPSG:26910)
+region_poly_projected <- st_as_sfc(pnw_bbox) %>% 
+  st_transform("EPSG:26910")
+
+# Turn it into a terra SpatVector for clipping
+region_vect <- vect(region_poly_projected)
+
+## Create the regional template raster (1km grid)
+grid_template <- rast(region_vect, res = 1000) 
+
+### Extract human population density values
+pop_1km <- project(pop_den_2020, grid_template, method = "sum")
+pop_grid <- mask(pop_1km, region_vect)
+names(pop_grid) <- "population_density" 
+
+## Convert population raster to data frame
+df_pred_melanism <- as.data.frame(pop_grid, xy = TRUE, na.rm = TRUE)
+
+## Get Lat/Lon coordinates for the localized grid
+coords_projected <- df_pred_melanism[, c("x", "y")]
+v <- vect(coords_projected, geom = c("x", "y"), crs = crs(pop_grid))
+v_latlon <- project(v, "EPSG:4326")
+
+df_pred_melanism$longitude <- crds(v_latlon)[, 1]
+df_pred_melanism$latitude  <- crds(v_latlon)[, 2]
+# Keeping column labels assigned as albers_x/y to maintain zero script friction downstream
+colnames(df_pred_melanism)[1:2] <- c("albers_x", "albers_y") 
+
+
+### Extract average winter daily minimum temperature for the PNW -----
+
+tmin_stack <- c(jan_2020, feb_2020, jan_2021, feb_2021)
+
+# Convert WGS84 bounding box directly to a SpatVector for early tmin cropping
+region_vect_wgs84 <- vect(st_as_sfc(pnw_bbox))
+winter_stack_cropped <- crop(tmin_stack, region_vect_wgs84)
+
+# Calculate the mean and project to the 1km regional grid
+winter_low_daily_avg <- mean(winter_stack_cropped)
+temp_1km <- project(winter_low_daily_avg, pop_grid, method = "bilinear")
+
+# Extract to dataframe
+v_points <- vect(df_pred_melanism, geom = c("albers_x", "albers_y"), crs = crs(pop_grid))
+temp_values <- terra::extract(temp_1km, v_points)
+df_pred_melanism$avg_winter_daily_low <- temp_values[, 2]
+
+
+### Extract Localized Forest Cover (High Efficiency) -----
+
+# Transform PNW vector to landcover projection before cropping
+pnw_lc_crs <- project(region_vect, crs(rast_lc))
+rast_lc_cropped <- crop(rast_lc, ext(pnw_lc_crs))
+
+# Break the file pointer link to clear RAM
+values(rast_lc_cropped) <- values(rast_lc_cropped)
+
+# Reclassify (1:6 are NALCMS forest types)
+m <- c(0, 0, 0,
+       1, 6, 1,   
+       6, 20, 0)  
+rcl_matrix <- matrix(m, ncol=3, byrow=TRUE)
+forest_mask <- classify(rast_lc_cropped, rcl_matrix, right=TRUE)
+
+# Aggregate from 30m up to ~1km and project
+forest_prop_30m <- aggregate(forest_mask, fact = 33, fun = "mean")
+forest_1km <- project(forest_prop_30m, pop_grid, method = "bilinear")
+forest_values <- terra::extract(forest_1km, v_points)
+df_pred_melanism$prop_forest <- forest_values[, 2]
+
+
+### Re-scale grid data to match the model scaling -----
+
+# Lock scaling calculations to original baseline model data frame (df_4_top_model)
+pop_mean <- mean(df_4_top_model$pop_den_scaled, na.rm = TRUE) 
+pop_sd   <- sd(df_4_top_model$pop_den_scaled, na.rm = TRUE)
+
+temp_mean <- mean(df_4_top_model$avg_winter_low_temp, na.rm = TRUE) 
+temp_sd   <- sd(df_4_top_model$avg_winter_low_temp, na.rm = TRUE)
+
+forest_mean <- mean(df_4_top_model$prop_forest_scaled, na.rm = TRUE)
+forest_sd   <- sd(df_4_top_model$prop_forest_scaled, na.rm = TRUE)
+
+df_pred_melanism$pop_den_scaled     <- (df_pred_melanism$population_density - pop_mean) / pop_sd
+df_pred_melanism$winter_temp_scaled <- (df_pred_melanism$avg_winter_daily_low - temp_mean) / temp_sd
+df_pred_melanism$prop_forest_scaled <- (df_pred_melanism$prop_
