@@ -45,7 +45,7 @@ mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + prop_forest_sc
 ## Define bounding box for the PNW Target Zone
 # Longitude range: -123.4 (West of Vancouver Island edge / Olympic Peninsula) to -121.7 (East of Cascade Foothills)
 # Latitude range:  47.2 (South of Tacoma/Seattle suburbs) to 49.4 (North of Metro Vancouver / North Shore Mountains)
-pnw_bbox <- st_bbox(c(xmin = -123.4, ymin = 47.2, xmax = -121.7, ymax = 49.4), 
+pnw_bbox <- st_bbox(c(xmin = -124, ymin = 47.2, xmax = -121.7, ymax = 49.4), 
                     crs = st_crs(4326))
 
 # Convert bounding box to local UTM Zone 10N (EPSG:26910)
@@ -132,4 +132,55 @@ forest_sd   <- sd(df_4_top_model$prop_forest_scaled, na.rm = TRUE)
 
 df_pred_melanism$pop_den_scaled     <- (df_pred_melanism$population_density - pop_mean) / pop_sd
 df_pred_melanism$winter_temp_scaled <- (df_pred_melanism$avg_winter_daily_low - temp_mean) / temp_sd
-df_pred_melanism$prop_forest_scaled <- (df_pred_melanism$prop_
+df_pred_melanism$prop_forest_scaled <- (df_pred_melanism$prop_forest - forest_mean) / forest_sd
+
+### Set RAC and native status -----
+
+# Calculate mean RAC from model df
+mean_RAC <- mean(df_4_top_model$RAC_20km)
+
+# Set all values to mean in projection dataset
+df_pred_melanism$RAC_20km <- mean_RAC
+
+# Set all as non-native
+df_pred_melanism$introduced <- "Y"
+
+### Project probability of melanism -----
+
+df_pred_melanism$prob_melanic <- predict(mod, newdata = df_pred_melanism, type = "response")
+
+pred_v <- vect(df_pred_melanism, geom = c("albers_x", "albers_y"), crs = "EPSG:26910")
+prob_raster <- rasterize(pred_v, pop_grid, field = "prob_melanic")
+
+
+### Generate Plot Map -----
+
+# Filter training points down to the local Southern California bounding box
+df_regional_points <- df_projected %>% 
+  st_filter(st_transform(st_as_sfc(la_bbox), "EPSG:26910"))
+
+proj_map <- ggplot() +
+  geom_spatraster(data = prob_raster) + 
+  scale_fill_gradient(
+    low = "lightgrey",
+    high = "black",
+    limits = c(0, 1),
+    na.value = "transparent"
+  ) + 
+  theme_bw() + 
+  labs(
+    x = "Longitude",
+    y = "Latitude",
+    fill = "Probability of Melanism",
+    #  ) + 
+    #  geom_point(data = df_regional_points, aes(x = lon_albers, y = lat_albers, col = as.factor(melanic_binary))) + 
+    #  scale_color_manual(
+    #    values = c("0" = "lightgreen",
+    #               "1" = "black"),
+    #    labels = c("0" = "Grey",
+    #               "1" = "Black"),
+    #    name = "Colour Morph"
+  ); proj_map
+
+# Save plot
+ggsave("Figures/melanism_projection_PNW_June8_2026.tiff", proj_map, dpi = "retina")

@@ -133,9 +133,16 @@ df_pred_melanism$pop_den_scaled     <- (df_pred_melanism$population_density - po
 df_pred_melanism$winter_temp_scaled <- (df_pred_melanism$avg_winter_daily_low - temp_mean) / temp_sd
 df_pred_melanism$prop_forest_scaled <- (df_pred_melanism$prop_forest - forest_mean) / forest_sd
 
-# Introduced settings
+### Set RAC and native status -----
+
+# Calculate mean RAC from model df
+mean_RAC <- mean(df_4_top_model$RAC_20km)
+
+# Set all values to mean in projection dataset
+df_pred_melanism$RAC_20km <- mean_RAC
+
+# Set all as non-native
 df_pred_melanism$introduced <- "Y"
-df_pred_melanism$RAC_20km <- 0
 
 
 ### Project probability of melanism -----
