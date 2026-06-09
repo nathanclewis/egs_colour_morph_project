@@ -133,9 +133,16 @@ df_pred_melanism$pop_den_scaled     <- (df_pred_melanism$population_density - po
 df_pred_melanism$winter_temp_scaled <- (df_pred_melanism$avg_winter_daily_low - temp_mean) / temp_sd
 df_pred_melanism$prop_forest_scaled <- (df_pred_melanism$prop_forest - forest_mean) / forest_sd
 
-# CRITICAL ECO-FIX: Set introduced status to "Y" because LA is an invasive range!
+### Set RAC and native status -----
+
+# Calculate mean RAC from model df
+mean_RAC <- mean(df_4_top_model$RAC_20km)
+
+# Set all values to mean in projection dataset
+df_pred_melanism$RAC_20km <- mean_RAC
+
+# Set all as non-native
 df_pred_melanism$introduced <- "Y"
-df_pred_melanism$RAC_20km <- 0
 
 ### Project probability of melanism -----
 
@@ -161,10 +168,9 @@ proj_map <- ggplot() +
   ) + 
   theme_bw() + 
   labs(
-    x = "Longitude (CA Albers)",
-    y = "Latitude (CA Albers)",
-    fill = "Probability of Melanism",
-    title = "Projected Probability of Melanism: Greater Los Angeles"
+    x = "Longitude",
+    y = "Latitude",
+    fill = "Probability of Melanism"
 #  ) + 
 #  geom_point(data = df_regional_points, aes(x = lon_albers, y = lat_albers, col = as.factor(melanic_binary))) + 
 #  scale_color_manual(
@@ -176,4 +182,4 @@ proj_map <- ggplot() +
   ); proj_map
 
 # Save plot
-ggsave("Figures/melanism_projection_LA_no_RAC_June5_2026.tiff", proj_map, dpi = "retina")
+ggsave("Figures/melanism_projection_LA_June8_2026.tiff", proj_map, dpi = "retina")
