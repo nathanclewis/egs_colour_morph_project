@@ -230,7 +230,7 @@ proj_map <- ggplot() +
   ); proj_map
 
   # Save plot
-  ggsave("Figures/melanism_projection_no_RAC_June9_2026.tiff", proj_map, dpi = "retina")
+  ggsave("Figures/melanism_projection_June9_2026.tiff", proj_map, dpi = "retina")
   
 ### Zoom in on Toronto -----
   
