@@ -155,9 +155,9 @@ prob_raster <- rasterize(pred_v, pop_grid, field = "prob_melanic")
 
 ### Generate Plot Map -----
 
-# Filter training points down to the local Southern California bounding box
+# Filter training points down to the local PNW bounding box
 df_regional_points <- df_projected %>% 
-  st_filter(st_transform(st_as_sfc(la_bbox), "EPSG:26910"))
+  st_filter(st_transform(st_as_sfc(pnw_bbox), "EPSG:26910"))
 
 proj_map <- ggplot() +
   geom_spatraster(data = prob_raster) + 
