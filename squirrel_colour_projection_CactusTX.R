@@ -58,22 +58,26 @@ region_vect <- vect(region_poly_projected)
 ## Create the regional template raster (1km grid)
 grid_template <- rast(region_vect, res = 1000) 
 
-### Extract human population density values
-pop_1km <- project(pop_den_2020, grid_template, method = "sum")
-pop_grid <- mask(pop_1km, region_vect)
+### Extract human population density values -----
+
+# 1. Project the Texas bounding box back to the exact CRS of the global population raster
+pop_crs_vect <- project(region_vect, crs(pop_den_2020))
+
+# 2. Crop the global population raster FIRST while it is still in its native format.
+# This prevents interpolation artifacts over small areas.
+pop_cropped_native <- crop(pop_den_2020, pop_crs_vect)
+
+# 3. Project the small, cropped chunk into your Texas Albers template grid.
+# Using 'bilinear' or 'near' ensures cells fill smoothly without generating NAs.
+pop_grid <- project(pop_cropped_native, grid_template, method = "bilinear")
 names(pop_grid) <- "population_density" 
 
 ## Convert population raster to data frame
 df_pred_melanism <- as.data.frame(pop_grid, xy = TRUE, na.rm = TRUE)
 
-## Get Lat/Lon coordinates for the localized grid
-coords_projected <- df_pred_melanism[, c("x", "y")]
-v <- vect(coords_projected, geom = c("x", "y"), crs = crs(pop_grid))
-v_latlon <- project(v, "EPSG:4326")
-
-df_pred_melanism$longitude <- crds(v_latlon)[, 1]
-df_pred_melanism$latitude  <- crds(v_latlon)[, 2]
-colnames(df_pred_melanism)[1:2] <- c("albers_x", "albers_y") 
+# Double Check: If your data frame is completely empty, it means 'na.rm = TRUE' 
+# dropped everything because the raster was all NAs. If it has rows now, it worked!
+print(head(df_pred_melanism))
 
 
 ### Extract average winter daily minimum temperature for the Texas Panhandle -----
