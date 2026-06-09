@@ -59,7 +59,7 @@ region_vect <- vect(region_poly_projected)
 grid_template <- rast(region_vect, res = 1000) 
 
 ### Extract human population density values
-pop_1km <- project(pop_den_2020, grid_template, method = "sum")
+pop_1km <- project(pop_den_2020, grid_template, method = "bilinear")
 pop_grid <- mask(pop_1km, region_vect)
 names(pop_grid) <- "population_density" 
 
@@ -121,14 +121,14 @@ df_pred_melanism$prop_forest <- forest_values[, 2]
 ### Re-scale grid data to match the model scaling -----
 
 # Lock scaling calculations to original baseline model data frame (df_4_top_model)
-pop_mean <- mean(df_4_top_model$pop_den_scaled, na.rm = TRUE) 
-pop_sd   <- sd(df_4_top_model$pop_den_scaled, na.rm = TRUE)
+pop_mean <- mean(df_4_top_model$weighted_pop_density, na.rm = TRUE) 
+pop_sd   <- sd(df_4_top_model$weighted_pop_density, na.rm = TRUE)
 
 temp_mean <- mean(df_4_top_model$avg_winter_low_temp, na.rm = TRUE) 
 temp_sd   <- sd(df_4_top_model$avg_winter_low_temp, na.rm = TRUE)
 
-forest_mean <- mean(df_4_top_model$prop_forest_scaled, na.rm = TRUE)
-forest_sd   <- sd(df_4_top_model$prop_forest_scaled, na.rm = TRUE)
+forest_mean <- mean(df_4_top_model$prop_forest, na.rm = TRUE)
+forest_sd   <- sd(df_4_top_model$prop_forest, na.rm = TRUE)
 
 df_pred_melanism$pop_den_scaled     <- (df_pred_melanism$population_density - pop_mean) / pop_sd
 df_pred_melanism$winter_temp_scaled <- (df_pred_melanism$avg_winter_daily_low - temp_mean) / temp_sd
@@ -183,4 +183,4 @@ proj_map <- ggplot() +
   ); proj_map
 
 # Save plot
-ggsave("Figures/melanism_projection_PNW_June8_2026.tiff", proj_map, dpi = "retina")
+ggsave("Figures/melanism_projection_PNW_June9_2026.tiff", proj_map, dpi = "retina")

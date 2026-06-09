@@ -82,7 +82,7 @@ grid_template <- rast(native_vect, res = 1000) # 1000m = 1km
 
 ### Extract human population density values -----
 
-pop_1km <- project(pop_den_2020, grid_template, method = "sum")
+pop_1km <- project(pop_den_2020, grid_template, method = "bilinear")
 pop_grid <- mask(pop_1km, native_vect)
 
 # Dynamically set the name to match downstream data frames
@@ -179,6 +179,9 @@ df_pred_melanism$prop_forest_scaled <- (df_pred_melanism$prop_forest - forest_me
 ## Add introduced status
 df_pred_melanism$introduced <- "N"
 
+## Save dataset
+#write_csv(df_pred_melanism, "C:/Users/Benson-Amram Lab/Desktop/Nathan/native_proj_dataset.csv")
+
 ### Project probability of melanism -----
 
 ## Predict probabilities
@@ -191,6 +194,12 @@ pred_v <- vect(df_pred_melanism, geom = c("albers_x", "albers_y"), crs = "ESRI:1
 ## Rasterize the probabilities
 prob_raster <- rasterize(pred_v, pop_grid, field = "prob_melanic")
 
+## Save raster of probabilities
+writeRaster(prob_raster, 
+            filename = "Data/melanism_probability_1km.tif", 
+            gdal = c("COMPRESS=LZW", "TFW=YES"), # LZW compression + creates a world file
+            overwrite = TRUE)
+
 ### Visualize the projection -----
 
 ## Read raster
@@ -200,7 +209,7 @@ prob_raster <- rast("Data/melanism_probability_1km.tif")
 proj_map <- ggplot() +
   geom_spatraster(data = prob_raster) +
   scale_fill_gradient(
-    low = "lightgrey",
+    low = "grey95",
     high = "black",
     limits = c(0,1),
     na.value = "transparent"
@@ -221,9 +230,9 @@ proj_map <- ggplot() +
   ); proj_map
 
   # Save plot
-  ggsave("Figures/melanism_projection_no_RAC_June5_2026.tiff", proj_map, dpi = "retina")
+  ggsave("Figures/melanism_projection_no_RAC_June9_2026.tiff", proj_map, dpi = "retina")
   
-### Scratch space -----
+### Zoom in on Toronto -----
   
   # 1. Create your bounding box in 4326
   gta_bbox <- st_bbox(c(xmin = -80.1, ymin = 43.3, xmax = -78.5, ymax = 44.4), 
@@ -240,7 +249,7 @@ proj_map <- ggplot() +
   ggplot() +
     geom_spatraster(data = prob_raster_gta) +
     scale_fill_gradient(
-      low = "lightgrey",
+      low = "grey95",
       high = "black",
       limits = c(0, 1),
       na.value = "transparent"
