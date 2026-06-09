@@ -64,7 +64,7 @@ rast_lc <- rast("C:/Users/Benson-Amram Lab/Desktop/Nathan/NA_NALCMS_landcover_20
 ## Create model
 mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + prop_forest_scaled + 
              introduced + pop_den_scaled:introduced + winter_temp_scaled:introduced + 
-             pop_den_scaled:winter_temp_scaled + pop_den_scaled:prop_forest_scaled,
+             pop_den_scaled:winter_temp_scaled + pop_den_scaled:prop_forest_scaled + RAC_20km,
            family = binomial(link = "logit"),
            data = df_4_top_model,
            na.action = "na.fail")
@@ -222,4 +222,33 @@ proj_map <- ggplot() +
 
   # Save plot
   ggsave("Figures/melanism_projection_no_RAC_June5_2026.tiff", proj_map, dpi = "retina")
+  
+### Scratch space -----
+  
+  # 1. Create your bounding box in 4326
+  gta_bbox <- st_bbox(c(xmin = -80.1, ymin = 43.3, xmax = -78.5, ymax = 44.4), 
+                      crs = st_crs(4326))
+  
+  # 2. Convert it to an sf geometry object and project it to match your raster's CRS
+  gta_bbox_proj <- st_as_sfc(gta_bbox) |> 
+    st_transform(crs(prob_raster))
+  
+  # 3. Crop your raster using the correctly projected box
+  prob_raster_gta <- crop(prob_raster, gta_bbox_proj)
+  
+  # 4. Plot (tidyterra handles the visualization smoothly)
+  ggplot() +
+    geom_spatraster(data = prob_raster_gta) +
+    scale_fill_gradient(
+      low = "lightgrey",
+      high = "black",
+      limits = c(0, 1),
+      na.value = "transparent"
+    ) +
+    theme_bw() +
+    labs(
+      x = "Longitude",
+      y = "Latitude",
+      fill = "Probability of Melanism"
+    )
   
