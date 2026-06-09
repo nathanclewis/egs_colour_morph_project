@@ -1,5 +1,38 @@
 ### Project across the Greater Toronto Area (GTA) 
 
+### Read libraries -----
+library(tidyverse)
+library(geodata)
+library(terra)   
+library(sf)
+library(tidyterra)
+
+### Read datasets -----
+
+## Full model dataset
+df_4_top_model <- read_csv("Data/data_4model.csv")
+
+## Model dataset as sf - CHANGED to ESRI:102008 
+df_projected <- df_4_top_model %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
+  st_transform("ESRI:102008") %>%
+  mutate(
+    lon_albers = st_coordinates(geometry)[, 1],
+    lat_albers = st_coordinates(geometry)[, 2]
+  )
+
+## Load SpatRasters
+pop_den_2020 <- rast("Data/NA_PopulationDensity_2020.tif")
+
+jan_2020 <- rast('Data/wc2.1_cruts4.06_2.5m_tmin_2020-2021/wc2.1_2.5m_tmin_2020-01.tif')
+feb_2020 <- rast('Data/wc2.1_cruts4.06_2.5m_tmin_2020-2021/wc2.1_2.5m_tmin_2020-02.tif')
+jan_2021 <- rast('Data/wc2.1_cruts4.06_2.5m_tmin_2020-2021/wc2.1_2.5m_tmin_2021-01.tif')
+feb_2021 <- rast('Data/wc2.1_cruts4.06_2.5m_tmin_2020-2021/wc2.1_2.5m_tmin_2021-02.tif')
+
+## Load land cover
+rast_lc <- rast("C:/Users/Benson-Amram Lab/Desktop/Nathan/NA_NALCMS_landcover_2020v2_30m.tif")
+
+
 ### Create model for prediction -----
 
 ## Create model
@@ -101,7 +134,15 @@ df_pred_melanism$pop_den_scaled     <- (df_pred_melanism$population_density - po
 df_pred_melanism$winter_temp_scaled <- (df_pred_melanism$avg_winter_daily_low - temp_mean) / temp_sd
 df_pred_melanism$prop_forest_scaled <- (df_pred_melanism$prop_forest - forest_mean) / forest_sd
 
-df_pred_melanism$RAC_20km <- 0 
+### Set RAC and native status -----
+
+# Calculate mean RAC from model df
+mean_RAC <- mean(df_4_top_model$RAC_20km)
+
+# Set all values to mean in projection dataset
+df_pred_melanism$RAC_20km <- mean_RAC
+
+# Set all as native
 df_pred_melanism$introduced <- "N"
 
 
@@ -139,6 +180,6 @@ proj_map <- ggplot() +
   ); proj_map
 
 # Save plot
-#ggsave("Figures/melanism_projection_GTA_June5_2026.tiff", proj_map, dpi = "retina")
+ggsave("Figures/melanism_projection_GTA_June8_2026.tiff", proj_map, dpi = "retina")
 
 
