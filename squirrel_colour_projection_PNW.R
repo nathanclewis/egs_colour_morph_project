@@ -162,7 +162,7 @@ df_regional_points <- df_projected %>%
 proj_map <- ggplot() +
   geom_spatraster(data = prob_raster) + 
   scale_fill_gradient(
-    low = "lightgrey",
+    low = "grey95",
     high = "black",
     limits = c(0, 1),
     na.value = "transparent"
