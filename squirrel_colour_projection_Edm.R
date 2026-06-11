@@ -45,7 +45,7 @@ mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + prop_forest_sc
 ## Define bounding box for the Edmonton Target Zone (WGS84 Coordinates)
 # Longitude range: -124.0 (West of Parkland County/Spruce Grove) to -123.1 (East of Strathcona County/Sherwood Park)
 # Latitude range:  53.2 (South of Leduc/YEG Airport) to 53.7 (North of St. Albert/Sturgeon County)
-edmonton_bbox <- st_bbox(c(xmin = -114.1, ymin = 53.2, xmax = -113.1, ymax = 53.7), 
+edmonton_bbox <- st_bbox(c(xmin = -113.9, ymin = 53.3, xmax = -113.1, ymax = 53.75), 
                          crs = st_crs(4326))
 
 # Convert bounding box to local UTM Zone 12N (EPSG:26912)
@@ -168,19 +168,14 @@ proj_map <- ggplot() +
     na.value = "transparent"
   ) + 
   theme_bw() + 
+  theme(axis.text = element_text(size = 20),
+        axis.title = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        legend.title = element_text(size = 20)) +
   labs(
     x = "Longitude",
     y = "Latitude",
-    fill = "Probability of Melanism",
-    #  ) + 
-    #  geom_point(data = df_regional_points, aes(x = lon_utm, y = lat_utm, col = as.factor(melanic_binary))) + 
-    #  scale_color_manual(
-    #    values = c("0" = "lightgreen",
-    #               "1" = "black"),
-    #    labels = c("0" = "Grey",
-    #               "1" = "Black"),
-    #    name = "Colour Morph"
-  ); proj_map
+    fill = "Probability of Melanism"); proj_map
 
 # Save plot
-ggsave("Figures/melanism_projection_Edm_June9_2026.tiff", proj_map, dpi = "retina")
+ggsave("Figures/melanism_projection_Edm_June10_2026.tiff", proj_map, dpi = "retina")
