@@ -48,6 +48,7 @@
   library(spdep) #for Moran's I test of spatial autocorrelation
   library(AICcmodavg) #for model selection
   library(broom.mixed) #for extracting model estimates and confidence intervals from mixed models
+  library(AICcmodavg) #for model selection
 }
 
 ### Read and prepare dataset -----

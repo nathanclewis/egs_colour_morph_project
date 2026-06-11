@@ -46,7 +46,7 @@ mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + prop_forest_sc
 ## Define bounding box for Southern California (LA Basin, Valleys, & Surrounding Mountains)
 # Longitude range: -119.0 (West of Malibu/Ventura border) to -117.5 (East of San Bernardino/Angeles Forest)
 # Latitude range:  33.6 (South of Orange County/Irvine) to 34.7 (North of Lancaster/Antelope Valley)
-la_bbox <- st_bbox(c(xmin = -118.75, ymin = 33.25,xmax = -117.5, ymax = 34.5), 
+la_bbox <- st_bbox(c(xmin = -118.8, ymin = 33.4,xmax = -117.5, ymax = 34.5), 
                    crs = st_crs(4326))
 
 # Convert bounding box to California Albers Equal Area (EPSG:3310)
