@@ -232,32 +232,3 @@ proj_map <- ggplot() +
   # Save plot
   ggsave("Figures/melanism_projection_June9_2026.tiff", proj_map, dpi = "retina")
   
-### Zoom in on Toronto -----
-  
-  # 1. Create your bounding box in 4326
-  gta_bbox <- st_bbox(c(xmin = -80.1, ymin = 43.3, xmax = -78.5, ymax = 44.4), 
-                      crs = st_crs(4326))
-  
-  # 2. Convert it to an sf geometry object and project it to match your raster's CRS
-  gta_bbox_proj <- st_as_sfc(gta_bbox) |> 
-    st_transform(crs(prob_raster))
-  
-  # 3. Crop your raster using the correctly projected box
-  prob_raster_gta <- crop(prob_raster, gta_bbox_proj)
-  
-  # 4. Plot (tidyterra handles the visualization smoothly)
-  ggplot() +
-    geom_spatraster(data = prob_raster_gta) +
-    scale_fill_gradient(
-      low = "grey95",
-      high = "black",
-      limits = c(0, 1),
-      na.value = "transparent"
-    ) +
-    theme_bw() +
-    labs(
-      x = "Longitude",
-      y = "Latitude",
-      fill = "Probability of Melanism"
-    )
-  
