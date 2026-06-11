@@ -45,7 +45,7 @@ mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + prop_forest_sc
 ### Define a bounding box for NYC and surrounding towns (NY, NJ, CT suburbs) -----
 # Longitude range: approx -74.5 (West NJ) to -73.3 (East Long Island/CT)
 # Latitude range: approx 40.4 (South NJ/Staten Island) to 41.3 (North Hudson Valley)
-nyc_bbox_wgs84 <- st_bbox(c(xmin = -75.6, ymin = 39.8, xmax = -73.3, ymax = 41.5), 
+nyc_bbox_wgs84 <- st_bbox(c(xmin = -74.75, ymin = 40.25, xmax = -73.25, ymax = 41.25), 
                           crs = st_crs(4326))
 
 # Convert the bounding box into a spatial polygon and project it to Albers Equal Area
@@ -165,20 +165,15 @@ proj_map <- ggplot() +
     na.value = "transparent"
   ) +
   theme_bw() +
+  theme(axis.text = element_text(size = 20),
+        axis.title = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        legend.title = element_text(size = 20)) +
   labs(
     x = "Longitude",
     y = "Latitude",
-    fill = "Probability of Melanism"
-    #) +
-    #geom_point(data = df_projected, aes(x = lon_albers, y = lat_albers, col = as.factor(melanic_binary))) +
-    #scale_color_manual(
-    #  values = c("0" = "lightgreen",
-    #             "1" = "black"),
-    #  labels = c("0" = "Grey",
-    #             "1" = "Black"),
-    #  name = "Colour Morph"
-  ); proj_map
+    fill = "Probability of Melanism"); proj_map
 
 # Save plot
-ggsave("Figures/melanism_projection_NYC_June9_2026.tiff", proj_map, dpi = "retina")
+ggsave("Figures/melanism_projection_NYC_June10_2026.tiff", proj_map, dpi = "retina")
 

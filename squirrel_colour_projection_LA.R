@@ -46,7 +46,7 @@ mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + prop_forest_sc
 ## Define bounding box for Southern California (LA Basin, Valleys, & Surrounding Mountains)
 # Longitude range: -119.0 (West of Malibu/Ventura border) to -117.5 (East of San Bernardino/Angeles Forest)
 # Latitude range:  33.6 (South of Orange County/Irvine) to 34.7 (North of Lancaster/Antelope Valley)
-la_bbox <- st_bbox(c(xmin = -119.0, ymin = 33.6, xmax = -117.5, ymax = 34.7), 
+la_bbox <- st_bbox(c(xmin = -118.75, ymin = 3325,xmax = -117.5, ymax = 34.5), 
                    crs = st_crs(4326))
 
 # Convert bounding box to California Albers Equal Area (EPSG:3310)
@@ -167,19 +167,14 @@ proj_map <- ggplot() +
     na.value = "transparent"
   ) + 
   theme_bw() + 
+  theme(axis.text = element_text(size = 20),
+        axis.title = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        legend.title = element_text(size = 20)) +
   labs(
     x = "Longitude",
     y = "Latitude",
-    fill = "Probability of Melanism"
-#  ) + 
-#  geom_point(data = df_regional_points, aes(x = lon_albers, y = lat_albers, col = as.factor(melanic_binary))) + 
-#  scale_color_manual(
-#    values = c("0" = "lightgreen",
-#               "1" = "black"),
-#    labels = c("0" = "Grey",
-#               "1" = "Black"),
-#    name = "Colour Morph"
-  ); proj_map
+    fill = "Probability of Melanism"); proj_map
 
 # Save plot
 ggsave("Figures/melanism_projection_LA_June9_2026.tiff", proj_map, dpi = "retina")

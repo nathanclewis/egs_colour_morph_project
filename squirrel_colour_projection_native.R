@@ -215,20 +215,15 @@ proj_map <- ggplot() +
     na.value = "transparent"
   ) +
   theme_bw() +
+  theme(axis.text = element_text(size = 20),
+        axis.title = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        legend.title = element_text(size = 20)) +
   labs(
     x = "Longitude",
     y = "Latitude",
-    fill = "Probability of Melanism"
-  #) +
-  #geom_point(data = df_projected, aes(x = lon_albers, y = lat_albers, col = as.factor(melanic_binary))) +
-  #scale_color_manual(
-  #  values = c("0" = "lightgreen",
-  #             "1" = "black"),
-  #  labels = c("0" = "Grey",
-  #             "1" = "Black"),
-  #  name = "Colour Morph"
-  ); proj_map
+    fill = "Probability of Melanism"); proj_map
 
   # Save plot
-  ggsave("Figures/melanism_projection_June9_2026.tiff", proj_map, dpi = "retina")
+  ggsave("Figures/melanism_projection_June10_2026.tiff", proj_map, dpi = "retina")
   
