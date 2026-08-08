@@ -46,147 +46,234 @@
   library(sf) #for working with shapefiles
   library(terra) #for working with spatial rasters
   library(spdep) #for Moran's I test of spatial autocorrelation
-  library(AICcmodavg) #for model selection
   library(broom.mixed) #for extracting model estimates and confidence intervals from mixed models
   library(AICcmodavg) #for model selection
+  library(pROC) #for ROC curve
+  
+  set.seed(123)
 }
 
-### Read and prepare dataset -----
+### Read and prepare datasets -----
 
 ## Read dataset as generated with the squirrel_colour_classification.R script
-df_full <- read_csv("Data/complete_data_4_analyses.csv")
-
-## Reduce df_full to usable and necessary data
-df_4model <- df_full %>%
+df_full <- read_csv("Data/complete_data_4_analyses.csv") %>%
   mutate(melanic_binary = ifelse(col_class == "melanic", 1, ifelse(col_class == "gray", 0, NA)),
          melanic_binary = factor(melanic_binary),
          introduced = ifelse(native == "Y", "N", "Y"),
          total_LC = forest + shrubland + grassland + barren + wetland + cropland + developed,
          prop_forest = forest/total_LC) %>%
   dplyr::select(id, latitude, longitude, weighted_pop_density, avg_winter_low_temp, introduced, prop_forest, col_class, melanic_binary) %>%
+  filter(introduced == "N" | longitude < -101.366) %>%
   na.omit()
 
-## Add log-centred versions of each predictor
-df_4model$pop_den_scaled <- scale(df_4model$weighted_pop_density) %>% as.vector
-df_4model$winter_temp_scaled <- scale(df_4model$avg_winter_low_temp) %>% as.vector
-df_4model$prop_forest_scaled <- scale(df_4model$prop_forest) %>% as.vector
+## Prepare native-only dataset
+df_4model_native <- df_full %>%
+  filter(introduced == "N") %>%
+  mutate(
+    pop_den_scaled = as.vector(scale(weighted_pop_density)),
+    winter_temp_scaled = as.vector(scale(avg_winter_low_temp)),
+    prop_forest_scaled = as.vector(scale(prop_forest))
+  )
 
-### Calculate residual autocorrelation -----
+## Calculate native means and standard deviations to apply to introduced range
+
+# Winter temperature
+temp_mean <- mean(df_4model_native$avg_winter_low_temp)
+temp_sd <- sd(df_4model_native$avg_winter_low_temp)
+
+# Population density
+popden_mean <- mean(df_4model_native$weighted_pop_density)
+popden_sd <- sd(df_4model_native$weighted_pop_density)
+
+# Forest
+forest_mean <- mean(df_4model_native$prop_forest)
+forest_sd <- sd(df_4model_native$prop_forest)
+
+## Prepare west coast introduced-only dataset
+df_4model_introduced <- df_full %>%
+  filter(introduced == "Y") %>%
+  mutate(
+    pop_den_scaled = (weighted_pop_density - popden_mean)/popden_sd,
+    winter_temp_scaled = (avg_winter_low_temp - temp_mean)/temp_sd,
+    prop_forest_scaled = (prop_forest - forest_mean)/forest_sd
+  )
+
+### Calculate residual autocorrelation for native range -----
 
 ## Ensure coordinates are a matrix for spdep
-coords <- as.matrix(df_4model[, c("longitude", "latitude")])
+coords_native <- as.matrix(df_4model_native[, c("longitude", "latitude")])
 
 # Fit the baseline global model (no RAC)
-mod_baseline <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + introduced +
-                      prop_forest_scaled + pop_den_scaled:introduced +
-                      winter_temp_scaled:introduced + pop_den_scaled:winter_temp_scaled +
+mod_baseline_native <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled +
+                      prop_forest_scaled + pop_den_scaled:winter_temp_scaled +
                       prop_forest_scaled:pop_den_scaled,
                     family = binomial(link = "logit"),
-                    data = df_4model,
+                    data = df_4model_native,
                     na.action = "na.fail")
 
 ## Extract the raw baseline deviance residuals to generate all downstream RAC terms
-base_resid <- residuals(mod_baseline, type = "deviance")
+base_resid_native <- residuals(mod_baseline_native, type = "deviance")
 
 ## Generate RAC covariates for 1 km scale
-nb_1km <- dnearneigh(coords, d1 = 0, d2 = 1, longlat = TRUE)
-listw_1km <- nb2listw(nb_1km, style = "W", zero.policy = TRUE)
-df_4model$RAC_1km <- lag.listw(listw_1km, base_resid, zero.policy = TRUE)
+nb_1km_native <- dnearneigh(coords_native, d1 = 0, d2 = 1, longlat = TRUE)
+listw_1km_native <- nb2listw(nb_1km_native, style = "W", zero.policy = TRUE)
+df_4model_native$RAC_1km <- lag.listw(listw_1km_native, base_resid_native, zero.policy = TRUE)
 
 ## Generate RAC covariates for 10 km scale
-nb_10km <- dnearneigh(coords, d1 = 0, d2 = 10, longlat = TRUE)
-listw_10km <- nb2listw(nb_10km, style = "W", zero.policy = TRUE)
-df_4model$RAC_10km <- lag.listw(listw_10km, base_resid, zero.policy = TRUE)
+nb_10km_native <- dnearneigh(coords_native, d1 = 0, d2 = 10, longlat = TRUE)
+listw_10km_native <- nb2listw(nb_10km_native, style = "W", zero.policy = TRUE)
+df_4model_native$RAC_10km <- lag.listw(listw_10km_native, base_resid_native, zero.policy = TRUE)
 
 ## Generate RAC covariates for 20 km scale
-nb_20km <- dnearneigh(coords, d1 = 0, d2 = 20, longlat = TRUE)
-listw_20km <- nb2listw(nb_20km, style = "W", zero.policy = TRUE)
-df_4model$RAC_20km <- lag.listw(listw_20km, base_resid, zero.policy = TRUE)
+nb_20km_native <- dnearneigh(coords_native, d1 = 0, d2 = 20, longlat = TRUE)
+listw_20km_native <- nb2listw(nb_20km_native, style = "W", zero.policy = TRUE)
+df_4model_native$RAC_20km <- lag.listw(listw_20km_native, base_resid_native, zero.policy = TRUE)
 
 ## Generate RAC covariate for 30 km scale
-nb_30km <- dnearneigh(coords, d1 = 0, d2 = 30, longlat = TRUE)
-listw_30km <- nb2listw(nb_30km, style = "W", zero.policy = TRUE)
-df_4model$RAC_30km <- lag.listw(listw_30km, base_resid, zero.policy = TRUE)
+nb_30km_native <- dnearneigh(coords_native, d1 = 0, d2 = 30, longlat = TRUE)
+listw_30km_native <- nb2listw(nb_30km_native, style = "W", zero.policy = TRUE)
+df_4model_native$RAC_30km <- lag.listw(listw_30km_native, base_resid_native, zero.policy = TRUE)
 
 ## Generate RAC covariate for 40 km scale
-nb_40km <- dnearneigh(coords, d1 = 0, d2 = 40, longlat = TRUE)
-listw_40km <- nb2listw(nb_40km, style = "W", zero.policy = TRUE)
-df_4model$RAC_40km <- lag.listw(listw_40km, base_resid, zero.policy = TRUE)
+nb_40km_native <- dnearneigh(coords_native, d1 = 0, d2 = 40, longlat = TRUE)
+listw_40km_native <- nb2listw(nb_40km_native, style = "W", zero.policy = TRUE)
+df_4model_native$RAC_40km <- lag.listw(listw_40km_native, base_resid_native, zero.policy = TRUE)
 
 ## Generate RAC covariates for 50 km scale
-nb_50km <- dnearneigh(coords, d1 = 0, d2 = 50, longlat = TRUE)
-listw_50km <- nb2listw(nb_50km, style = "W", zero.policy = TRUE)
-df_4model$RAC_50km <- lag.listw(listw_50km, base_resid, zero.policy = TRUE)
+nb_50km_native <- dnearneigh(coords_native, d1 = 0, d2 = 50, longlat = TRUE)
+listw_50km_native <- nb2listw(nb_50km_native, style = "W", zero.policy = TRUE)
+df_4model_native$RAC_50km <- lag.listw(listw_50km_native, base_resid_native, zero.policy = TRUE)
 
 ## Fit models for each RAC scale
 
-mod_RAC_1km  <- update(mod_baseline, . ~ . + RAC_1km,  data = df_4model)
-mod_RAC_10km <- update(mod_baseline, . ~ . + RAC_10km, data = df_4model)
-mod_RAC_20km <- update(mod_baseline, . ~ . + RAC_20km, data = df_4model)
-mod_RAC_30km <- update(mod_baseline, . ~ . + RAC_30km, data = df_4model)
-mod_RAC_40km <- update(mod_baseline, . ~ . + RAC_40km, data = df_4model)
-mod_RAC_50km <- update(mod_baseline, . ~ . + RAC_50km, data = df_4model)
+mod_RAC_1km_native  <- update(mod_baseline_native, . ~ . + RAC_1km,  data = df_4model_native)
+mod_RAC_10km_native <- update(mod_baseline_native, . ~ . + RAC_10km, data = df_4model_native)
+mod_RAC_20km_native <- update(mod_baseline_native, . ~ . + RAC_20km, data = df_4model_native)
+mod_RAC_30km_native <- update(mod_baseline_native, . ~ . + RAC_30km, data = df_4model_native)
+mod_RAC_40km_native <- update(mod_baseline_native, . ~ . + RAC_40km, data = df_4model_native)
+mod_RAC_50km_native <- update(mod_baseline_native, . ~ . + RAC_50km, data = df_4model_native)
 
 ## Perform model selection
 
 # Pack models into a named list for a tidy printout
-models_list <- list(
-  "No Spatial Control (Baseline)" = mod_baseline,
-  "1 km RAC"  = mod_RAC_1km,
-  "10 km RAC" = mod_RAC_10km,
-  "20 km RAC" = mod_RAC_20km,
-  "30 km RAC" = mod_RAC_30km,
-  "40 km RAC" = mod_RAC_40km,
-  "50 km RAC" = mod_RAC_50km
+models_list_native <- list(
+  "No Spatial Control (Baseline)" = mod_baseline_native,
+  "1 km RAC"  = mod_RAC_1km_native,
+  "10 km RAC" = mod_RAC_10km_native,
+  "20 km RAC" = mod_RAC_20km_native,
+  "30 km RAC" = mod_RAC_30km_native,
+  "40 km RAC" = mod_RAC_40km_native,
+  "50 km RAC" = mod_RAC_50km_native
 )
 
 # Generate and print the selection table
-aic_table <- aictab(cand.set = models_list)
-print(aic_table)
+aic_table_native <- aictab(cand.set = models_list_native)
+print(aic_table_native)
 
 ## Evaluate Residuals of the Winning Model
 
 # Extract the residuals from the top model
-winning_resids <- residuals(mod_RAC_20km, type = "deviance")
+winning_resids_native <- residuals(mod_RAC_20km_native, type = "deviance")
 
 # Run the Moran's I test using the 20 km spatial weights matrix we made earlier
-moran_result <- moran.test(winning_resids, listw = listw_20km, zero.policy = TRUE)
-print(moran_result)
+moran_result_native <- moran.test(winning_resids_native, listw = listw_20km_native, zero.policy = TRUE)
+print(moran_result_native)
 
-### Save model-ready dataset -----
+### Calculate residual autocorrelation for introduced range -----
+
+## Calculate mean native RAC
+RAC_20km_mean <- mean(df_4model_native$RAC_20km)
+
+## Assign all introduced reports the mean native value
+df_4model_introduced$RAC_20km <- RAC_20km_mean
+
+### Save and read model-ready datasets -----
+
+## Native range
 
 #Save df
-write_csv(df_4model, "Data/data_4model.csv")
+write_csv(df_4model_native, "Data/data_4model_native.csv")
 
 #Read saved df with RAC
-df_4model <- read_csv("Data/data_4model.csv")
+df_4model_native <- read_csv("Data/data_4model_native.csv")
+
+## Introduced range
+
+#Save df
+write_csv(df_4model_introduced, "Data/data_4model_introduced.csv")
+
+#Read saved df with RAC
+df_4model_introduced <- read_csv("Data/data_4model_introduced.csv")
 
 ### Assess predictors for correlation -----
 
-## Pearson's r
-cor(df_4model[c(10:12)], method = "pearson")
+## Native
 
-### Perform complete logistic regression -----
+#Pearson's r
+cor(df_4model_native[c(10:12)], method = "pearson")
+
+## Introduced
+
+#Pearson's r
+cor(df_4model_introduced[c(10:12)], method = "pearson")
+
+### Perform logistic regression for native range -----
 
 ## Create model
-mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + prop_forest_scaled + 
-             introduced + pop_den_scaled:introduced + winter_temp_scaled:introduced + 
-             pop_den_scaled:winter_temp_scaled + pop_den_scaled:prop_forest_scaled + RAC_20km,
+mod_native <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + prop_forest_scaled + 
+               pop_den_scaled:winter_temp_scaled + pop_den_scaled:prop_forest_scaled + RAC_20km,
                family = binomial(link = "logit"),
-               data = df_4model,
+               data = df_4model_native,
                na.action = "na.fail")
 
 ## Evaluate model
-summary(mod)
-confint(mod)
-r2(mod)
-visreg(mod, scale = "response")
-check_collinearity(mod)
+summary(mod_native)
+confint(mod_native)
+r2(mod_native)
+visreg(mod_native, scale = "response")
+check_collinearity(mod_native)
+
+### Predict introduced morphs with native model -----
+
+## Predict probabilities of melanism in the introduced dataset using native coefficients
+df_4model_introduced$pred_prob <- predict(
+  mod_native, 
+  newdata = df_4model_introduced, 
+  type = "response"
+)
+
+## Discrimination (AUC / ROC Curve)
+roc_obj <- roc(df_4model_introduced$melanic_binary, df_4model_introduced$pred_prob)
+auc(roc_obj)
+plot(roc_obj, main = "ROC Curve: Native Model Predicting Introduced Range")
+
+## Mean Predicted Probability vs. Actual Prevalence
+mean_actual <- mean(df_4model_introduced$melanic_binary, na.rm = TRUE)
+mean_predicted <- mean(df_4model_introduced$pred_prob, na.rm = TRUE)
+
+cat("Actual Introduced Prevalence:", mean_actual, "\n")
+cat("Mean Predicted Prevalence:", mean_predicted, "\n")
+
+### Introduced logistic calibration model -----
+
+## Convert predicted probabilities back to log-odds scale
+df_4model_introduced$logit_pred <- logit(df_4model_introduced$pred_prob) 
+# Note: logit(p) is log(p / (1 - p))
+
+# Fit calibration model with logit predictions as an offset
+calib_model <- glm(
+  melanic_binary ~ logit_pred, 
+  family = binomial, 
+  data = df_4model_introduced
+)
+
+# Inspect the intercept to determine whether the baseline melanism is different between the native and introduced ranges
+summary(calib_model)
 
 ### Plot raw data -----
 
 ## Human pop den
-df_4model %>%
+df_full %>%
   mutate(col_class_binary = ifelse(col_class == "gray", 0,
                                    ifelse(col_class == "melanic", 1,
                                           NA))) %>%
@@ -198,7 +285,7 @@ df_4model %>%
   theme_bw()
 
 ## Winter temperature
-df_4model %>%
+df_full %>%
   mutate(col_class_binary = ifelse(col_class == "gray", 0,
                                    ifelse(col_class == "melanic", 1,
                                           NA))) %>%
@@ -210,7 +297,7 @@ df_4model %>%
   theme_bw()
 
 ## Forest cover
-df_4model %>%
+df_full %>%
   mutate(col_class_binary = ifelse(col_class == "gray", 0,
                                    ifelse(col_class == "melanic", 1,
                                           NA))) %>%
@@ -223,33 +310,30 @@ df_4model %>%
 
 ### Plot confidence intervals -----
 
-## Create df with confidence intervals
+## Function to tidy and label models
+tidy_model <- function(model, label) {
+  tidy(model, conf.int = TRUE) %>%
+    #filter(effect == "fixed") %>%
+    mutate(model_type = label)
+}
 
-df_plot_data <- tidy(mod, conf.int = TRUE) %>%
-    # Rename components for cleaner facet labels
-    mutate(term = fct_recode(term,
-                             `Intercept` = "(Intercept)",
+## Create df with confidence intervals
+df_plot_data <- tidy_model(mod_native, "Native") %>%
+  # Remove intercepts
+  filter(!term %in% c("(Intercept)", "RAC_10km", "RAC_20km")) %>%
+  # Rename components for cleaner facet labels
+  mutate(term = fct_recode(term,
                              `Population density` = "pop_den_scaled",
                              `Winter temperature` = "winter_temp_scaled",
                              `Forest cover` = "prop_forest_scaled",
-                             `Non-native` = "introducedY",
-                             `Residual autocovariate` = "RAC_20km",
-                             `Population density x Non-native` = "pop_den_scaled:introducedY",
-                             `Winter temperature x Non-native` = "winter_temp_scaled:introducedY",
-                             `Population density x Winter temperature` = "pop_den_scaled:winter_temp_scaled",
-                             `Population density x Forest cover` = "pop_den_scaled:prop_forest_scaled"),
+                             `Population density x\nWinter temperature` = "pop_den_scaled:winter_temp_scaled",
+                             `Population density x\nForest cover` = "pop_den_scaled:prop_forest_scaled"),
            term = fct_rev(fct_relevel(term,
-                              "Intercept",
-                              "Residual autocovariate",
-                              "Non-native",
                               "Winter temperature",
                               "Population density",
                               "Forest cover",
-                              "Winter temperature x Non-native",
-                              "Population density x Non-native",
-                              "Population density x Forest cover",
-                              "Population density x Winter temperature"))) %>%
-  filter(!term %in% c("Intercept", "Residual autocovariate"))
+                              "Population density x\nForest cover",
+                              "Population density x\nWinter temperature")))
 
 
 #Create plot
@@ -262,6 +346,10 @@ CI_plot <- ggplot(df_plot_data, aes(x = estimate, y = term)) +
                   size = 1) +
   labs(x = "Coefficient Estimate (with 95% CI)",
        y = NULL) +
+  # Prevent overlap
+  geom_pointrange(aes(xmin = conf.low, xmax = conf.high),
+                  position = position_dodge(width = 0.6),
+                  size = 1) +
   theme_minimal() +
   theme(axis.text.x = element_text(size = 22),
         axis.text.y = element_text(size = 22),
@@ -270,7 +358,7 @@ CI_plot <- ggplot(df_plot_data, aes(x = estimate, y = term)) +
         legend.title = element_text(size = 22)) +
   theme(panel.grid.minor = element_blank(),
         strip.text = element_text(face = "bold", size = 22),
-        panel.border = element_rect(color = "black", fill = NA, linewidth = 1));CI_plot
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1)); CI_plot
 
 ggsave("Figures/CI_plot.png")
 
@@ -285,12 +373,15 @@ visreg(mod, xvar = "pop_den_scaled", by = "introduced", scale = "response", gg =
 
 ### Map reported sightings -----
 
-# Create the base map
-leaflet(df_4model) %>%
+## Load range map
+range <- read_sf("Data/EGS_nativerange.shp")
+
+## Create the base map
+leaflet(df_4model_introduced) %>%
   addTiles() %>%
   # Add MELANIC squirrels as one group
   addCircles(
-    data = subset(df_4model, col_class == "melanic"),
+    data = subset(df_full, col_class == "melanic"),
     ~longitude, ~latitude,
     color = "black",
     group = "Melanic",
@@ -299,7 +390,7 @@ leaflet(df_4model) %>%
   ) %>%
   # Add GREY squirrels as another group
   addCircles(
-    data = subset(df_4model, col_class == "gray"),
+    data = subset(df_full, col_class == "gray"),
     ~longitude, ~latitude,
     color = "grey",
     group = "Grey",
@@ -308,7 +399,7 @@ leaflet(df_4model) %>%
   ) %>%
   # Add OTHER squirrels as another group
   addCircles(
-    data = subset(df_4model, col_class == "other"),
+    data = subset(df_full, col_class == "other"),
     ~longitude, ~latitude,
     color = "green",
     group = "Other",
@@ -322,5 +413,8 @@ leaflet(df_4model) %>%
   ) %>%
   # Add shape for native range
   addPolygons(
-    data = range
+    data = range,
+    fill = FALSE,
+    color = "black",
+    weight = 1 #set border thickness
   )
