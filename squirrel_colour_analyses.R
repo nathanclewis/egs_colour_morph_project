@@ -1,6 +1,6 @@
 ##### Analyses for the squirrel colour morphs project
 
-#### Script Info/Instructions -----
+##### Script Info/Instructions -----
 
 {
   ## Start-up Instructions
@@ -12,11 +12,13 @@
   ## Script Format
   ##### Script Description
   #### Script Instructions/Details
-  ### Section Header
+  ##########Section header
+  ### Subsection Header
   ## Description of single code chunk
   # Description of single line
 }
 
+########## Setup -----
 ### Download packages -----
 
 {
@@ -53,7 +55,7 @@
   set.seed(123)
 }
 
-### Read and prepare datasets -----
+### Read full dataset -----
 
 ## Read dataset as generated with the squirrel_colour_classification.R script
 df_full <- read_csv("Data/complete_data_4_analyses.csv") %>%
@@ -66,138 +68,247 @@ df_full <- read_csv("Data/complete_data_4_analyses.csv") %>%
   filter(introduced == "N" | longitude < -101.366) %>%
   na.omit()
 
+########## Full native dataset (no out-of-sample subset removed) -----
+### Prepare dataset -----
+
 ## Prepare native-only dataset
-df_4model_native <- df_full %>%
+df_4model_fullnative <- df_full %>%
   filter(introduced == "N") %>%
   mutate(
-    pop_den_scaled = as.vector(scale(weighted_pop_density)),
-    winter_temp_scaled = as.vector(scale(avg_winter_low_temp)),
-    prop_forest_scaled = as.vector(scale(prop_forest))
-  )
+    pop_den_scaled = (weighted_pop_density - mean(df_4model_fullnative$weighted_pop_density))/sd(df_4model_fullnative$weighted_pop_density),
+    winter_temp_scaled = (avg_winter_low_temp - mean(df_4model_fullnative$avg_winter_low_temp))/sd(df_4model_fullnative$avg_winter_low_temp),
+    prop_forest_scaled = (prop_forest - mean(df_4model_fullnative$prop_forest))/sd(df_4model_fullnative$prop_forest))
 
-## Calculate native means and standard deviations to apply to introduced range
+### Calculate residual autocorrelation -----
 
-# Winter temperature
-temp_mean <- mean(df_4model_native$avg_winter_low_temp)
-temp_sd <- sd(df_4model_native$avg_winter_low_temp)
+## Ensure coordinates are a matrix for spdep
+coords_fullnative <- as.matrix(df_4model_fullnative[, c("longitude", "latitude")])
 
-# Population density
-popden_mean <- mean(df_4model_native$weighted_pop_density)
-popden_sd <- sd(df_4model_native$weighted_pop_density)
+# Fit the baseline global model (no RAC)
+mod_baseline_fullnative <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled +
+                      prop_forest_scaled + pop_den_scaled:winter_temp_scaled +
+                      prop_forest_scaled:pop_den_scaled,
+                    family = binomial(link = "logit"),
+                    data = df_4model_fullnative,
+                    na.action = "na.fail")
 
-# Forest
-forest_mean <- mean(df_4model_native$prop_forest)
-forest_sd <- sd(df_4model_native$prop_forest)
+## Extract the raw baseline deviance residuals to generate all downstream RAC terms
+base_resid_fullnative <- residuals(mod_baseline_fullnative, type = "deviance")
+
+## Generate RAC covariates for 1 km scale
+nb_1km_fullnative <- dnearneigh(coords_fullnative, d1 = 0, d2 = 1, longlat = TRUE)
+listw_1km_fullnative <- nb2listw(nb_1km_fullnative, style = "W", zero.policy = TRUE)
+df_4model_fullnative$RAC_1km <- lag.listw(listw_1km_fullnative, base_resid_fullnative, zero.policy = TRUE)
+
+## Generate RAC covariates for 10 km scale
+nb_10km_fullnative <- dnearneigh(coords_fullnative, d1 = 0, d2 = 10, longlat = TRUE)
+listw_10km_fullnative <- nb2listw(nb_10km_fullnative, style = "W", zero.policy = TRUE)
+df_4model_fullnative$RAC_10km <- lag.listw(listw_10km_fullnative, base_resid_fullnative, zero.policy = TRUE)
+
+## Generate RAC covariates for 20 km scale
+nb_20km_fullnative <- dnearneigh(coords_fullnative, d1 = 0, d2 = 20, longlat = TRUE)
+listw_20km_fullnative <- nb2listw(nb_20km_fullnative, style = "W", zero.policy = TRUE)
+df_4model_fullnative$RAC_20km <- lag.listw(listw_20km_fullnative, base_resid_fullnative, zero.policy = TRUE)
+
+## Generate RAC covariate for 30 km scale
+nb_30km_fullnative <- dnearneigh(coords_fullnative, d1 = 0, d2 = 30, longlat = TRUE)
+listw_30km_fullnative <- nb2listw(nb_30km_fullnative, style = "W", zero.policy = TRUE)
+df_4model_fullnative$RAC_30km <- lag.listw(listw_30km_fullnative, base_resid_fullnative, zero.policy = TRUE)
+
+## Generate RAC covariate for 40 km scale
+nb_40km_fullnative <- dnearneigh(coords_fullnative, d1 = 0, d2 = 40, longlat = TRUE)
+listw_40km_fullnative <- nb2listw(nb_40km_fullnative, style = "W", zero.policy = TRUE)
+df_4model_fullnative$RAC_40km <- lag.listw(listw_40km_fullnative, base_resid_fullnative, zero.policy = TRUE)
+
+## Generate RAC covariates for 50 km scale
+nb_50km_fullnative <- dnearneigh(coords_fullnative, d1 = 0, d2 = 50, longlat = TRUE)
+listw_50km_fullnative <- nb2listw(nb_50km_fullnative, style = "W", zero.policy = TRUE)
+df_4model_fullnative$RAC_50km <- lag.listw(listw_50km_fullnative, base_resid_fullnative, zero.policy = TRUE)
+
+## Fit models for each RAC scale
+
+mod_RAC_1km_fullnative  <- update(mod_baseline_fullnative, . ~ . + RAC_1km,  data = df_4model_fullnative)
+mod_RAC_10km_fullnative <- update(mod_baseline_fullnative, . ~ . + RAC_10km, data = df_4model_fullnative)
+mod_RAC_20km_fullnative <- update(mod_baseline_fullnative, . ~ . + RAC_20km, data = df_4model_fullnative)
+mod_RAC_30km_fullnative <- update(mod_baseline_fullnative, . ~ . + RAC_30km, data = df_4model_fullnative)
+mod_RAC_40km_fullnative <- update(mod_baseline_fullnative, . ~ . + RAC_40km, data = df_4model_fullnative)
+mod_RAC_50km_fullnative <- update(mod_baseline_fullnative, . ~ . + RAC_50km, data = df_4model_fullnative)
+
+## Perform model selection
+
+# Pack models into a named list for a tidy printout
+models_list_fullnative <- list(
+  "No Spatial Control (Baseline)" = mod_baseline_fullnative,
+  "1 km RAC"  = mod_RAC_1km_fullnative,
+  "10 km RAC" = mod_RAC_10km_fullnative,
+  "20 km RAC" = mod_RAC_20km_fullnative,
+  "30 km RAC" = mod_RAC_30km_fullnative,
+  "40 km RAC" = mod_RAC_40km_fullnative,
+  "50 km RAC" = mod_RAC_50km_fullnative
+)
+
+# Generate and print the selection table
+aic_table_fullnative <- aictab(cand.set = models_list_fullnative)
+print(aic_table_fullnative)
+
+## Evaluate Residuals of the Winning Model
+
+# Extract the residuals from the top model
+winning_resids_fullnative <- residuals(mod_RAC_20km_fullnative, type = "deviance")
+
+# Run the Moran's I test using the 20 km spatial weights matrix we made earlier
+moran_result_fullnative <- moran.test(winning_resids_fullnative, listw = listw_20km_fullnative, zero.policy = TRUE)
+print(moran_result_fullnative)
+
+### Save and read model-ready datasets -----
+
+#Save df
+write_csv(df_4model_fullnative, "Data/data_4model_fullnative.csv")
+
+#Read saved df with RAC
+df_4model_fullnative <- read_csv("Data/data_4model_fullnative.csv")
+
+### Assess predictors for correlation -----
+
+#Pearson's r
+cor(df_4model_fullnative[c(10:12)], method = "pearson")
+
+### Perform logistic regression -----
+
+## Create model
+mod_fullnative <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + prop_forest_scaled + 
+                    pop_den_scaled:winter_temp_scaled + pop_den_scaled:prop_forest_scaled + RAC_20km,
+                  family = binomial(link = "logit"),
+                  data = df_4model_fullnative,
+                  na.action = "na.fail")
+
+## Evaluate model
+summary(mod_fullnative)
+confint(mod_fullnative)
+r2(mod_fullnative)
+visreg(mod_fullnative, scale = "response")
+check_collinearity(mod_fullnative)
+
+########## Native training dataset (out-of-sample subset removed) -----
+### Identify subset to remove -----
+
+## Set the seed for reproducibility
+set.seed(12345)
+
+## Slice a random subset
+df_native_slice <- df_4model_fullnative %>%
+  #Make the random subset equal in length to the introduced sample
+  slice_sample(n = length(df_full$id[df_full$introduced == "Y"]))
+
+### Prepare training set -----
+
+df_4model_trainnative <- df_4model_fullnative %>%
+  anti_join(df_native_slice, by = "id")
+
+### Save and read model-ready datasets -----
+
+#Save df
+write_csv(df_4model_trainnative, "Data/data_4model_trainnative.csv")
+
+#Read saved df with RAC
+df_4model_trainnative <- read_csv("Data/data_4model_trainnative.csv")
+
+### Assess predictors for correlation -----
+
+#Pearson's r
+cor(df_4model_trainnative[c(10:12)], method = "pearson")
+
+### Perform logistic regression -----
+
+## Create model
+mod_trainnative <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + prop_forest_scaled + 
+                    pop_den_scaled:winter_temp_scaled + pop_den_scaled:prop_forest_scaled + RAC_20km,
+                  family = binomial(link = "logit"),
+                  data = df_4model_trainnative,
+                  na.action = "na.fail")
+
+## Evaluate model
+summary(mod_trainnative)
+confint(mod_trainnative)
+r2(mod_trainnative)
+visreg(mod_trainnative, scale = "response")
+check_collinearity(mod_trainnative)
+
+########## Native out-of-sample subset -----
+### Prepare dataset -----
+
+## Create subset df
+df_4model_testnative <- df_native_slice %>%
+  mutate(
+    pop_den_scaled = (weighted_pop_density - mean(df_4model_fullnative$weighted_pop_density))/sd(df_4model_fullnative$weighted_pop_density),
+    winter_temp_scaled = (avg_winter_low_temp - mean(df_4model_fullnative$avg_winter_low_temp))/sd(df_4model_fullnative$avg_winter_low_temp),
+    prop_forest_scaled = (prop_forest - mean(df_4model_fullnative$prop_forest))/sd(df_4model_fullnative$prop_forest),
+    RAC_20km = mean(df_4model_testnative$RAC_20km))
+
+### Save and read model-ready datasets -----
+
+#Save df
+write_csv(df_4model_testnative, "Data/data_4model_testnative.csv")
+
+#Read saved df with RAC
+df_4model_testnative <- read_csv("Data/data_4model_testnative.csv")
+
+### Assess predictors for correlation -----
+
+#Pearson's r
+cor(df_4model_testnative[c(10:12)], method = "pearson")
+
+
+### Predict native test morphs with native model -----
+
+## Predict probabilities of melanism in the introduced dataset using native coefficients
+df_4model_testnative$pred_prob <- predict(
+  mod_trainnative, 
+  newdata = df_4model_testnative, 
+  type = "response"
+)
+
+## Discrimination (AUC / ROC Curve)
+roc_obj_testnative <- roc(df_4model_testnative$melanic_binary, df_4model_testnative$pred_prob)
+auc(roc_obj_testnative)
+plot(roc_obj_testnative) #ROC Curve: Native Model Predicting Introduced Range
+
+## Mean Predicted Probability vs. Actual Prevalence
+mean_actual_testnative <- mean(df_4model_testnative$melanic_binary, na.rm = TRUE)
+mean_predicted_testnative <- mean(df_4model_testnative$pred_prob, na.rm = TRUE)
+
+cat("Actual Prevalence:", mean_actual_testnative, "\n")
+cat("Mean Predicted Prevalence:", mean_predicted_testnative, "\n")
+
+### Logistic calibration model -----
+
+## Convert predicted probabilities back to log-odds scale
+df_4model_testnative$logit_pred <- logit(df_4model_testnative$pred_prob) 
+# Note: logit(p) is log(p / (1 - p))
+
+# Fit calibration model with logit predictions as an offset
+calib_model_testnative <- glm(
+  melanic_binary ~ logit_pred, 
+  family = binomial, 
+  data = df_4model_testnative
+)
+
+# Inspect the intercept to determine whether the baseline melanism is different between the native and introduced ranges
+summary(calib_model_testnative)
+
+########## Introduced subset -----
+### Prepare dataset -----
 
 ## Prepare west coast introduced-only dataset
 df_4model_introduced <- df_full %>%
   filter(introduced == "Y") %>%
   mutate(
-    pop_den_scaled = (weighted_pop_density - popden_mean)/popden_sd,
-    winter_temp_scaled = (avg_winter_low_temp - temp_mean)/temp_sd,
-    prop_forest_scaled = (prop_forest - forest_mean)/forest_sd
-  )
-
-### Calculate residual autocorrelation for native range -----
-
-## Ensure coordinates are a matrix for spdep
-coords_native <- as.matrix(df_4model_native[, c("longitude", "latitude")])
-
-# Fit the baseline global model (no RAC)
-mod_baseline_native <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled +
-                      prop_forest_scaled + pop_den_scaled:winter_temp_scaled +
-                      prop_forest_scaled:pop_den_scaled,
-                    family = binomial(link = "logit"),
-                    data = df_4model_native,
-                    na.action = "na.fail")
-
-## Extract the raw baseline deviance residuals to generate all downstream RAC terms
-base_resid_native <- residuals(mod_baseline_native, type = "deviance")
-
-## Generate RAC covariates for 1 km scale
-nb_1km_native <- dnearneigh(coords_native, d1 = 0, d2 = 1, longlat = TRUE)
-listw_1km_native <- nb2listw(nb_1km_native, style = "W", zero.policy = TRUE)
-df_4model_native$RAC_1km <- lag.listw(listw_1km_native, base_resid_native, zero.policy = TRUE)
-
-## Generate RAC covariates for 10 km scale
-nb_10km_native <- dnearneigh(coords_native, d1 = 0, d2 = 10, longlat = TRUE)
-listw_10km_native <- nb2listw(nb_10km_native, style = "W", zero.policy = TRUE)
-df_4model_native$RAC_10km <- lag.listw(listw_10km_native, base_resid_native, zero.policy = TRUE)
-
-## Generate RAC covariates for 20 km scale
-nb_20km_native <- dnearneigh(coords_native, d1 = 0, d2 = 20, longlat = TRUE)
-listw_20km_native <- nb2listw(nb_20km_native, style = "W", zero.policy = TRUE)
-df_4model_native$RAC_20km <- lag.listw(listw_20km_native, base_resid_native, zero.policy = TRUE)
-
-## Generate RAC covariate for 30 km scale
-nb_30km_native <- dnearneigh(coords_native, d1 = 0, d2 = 30, longlat = TRUE)
-listw_30km_native <- nb2listw(nb_30km_native, style = "W", zero.policy = TRUE)
-df_4model_native$RAC_30km <- lag.listw(listw_30km_native, base_resid_native, zero.policy = TRUE)
-
-## Generate RAC covariate for 40 km scale
-nb_40km_native <- dnearneigh(coords_native, d1 = 0, d2 = 40, longlat = TRUE)
-listw_40km_native <- nb2listw(nb_40km_native, style = "W", zero.policy = TRUE)
-df_4model_native$RAC_40km <- lag.listw(listw_40km_native, base_resid_native, zero.policy = TRUE)
-
-## Generate RAC covariates for 50 km scale
-nb_50km_native <- dnearneigh(coords_native, d1 = 0, d2 = 50, longlat = TRUE)
-listw_50km_native <- nb2listw(nb_50km_native, style = "W", zero.policy = TRUE)
-df_4model_native$RAC_50km <- lag.listw(listw_50km_native, base_resid_native, zero.policy = TRUE)
-
-## Fit models for each RAC scale
-
-mod_RAC_1km_native  <- update(mod_baseline_native, . ~ . + RAC_1km,  data = df_4model_native)
-mod_RAC_10km_native <- update(mod_baseline_native, . ~ . + RAC_10km, data = df_4model_native)
-mod_RAC_20km_native <- update(mod_baseline_native, . ~ . + RAC_20km, data = df_4model_native)
-mod_RAC_30km_native <- update(mod_baseline_native, . ~ . + RAC_30km, data = df_4model_native)
-mod_RAC_40km_native <- update(mod_baseline_native, . ~ . + RAC_40km, data = df_4model_native)
-mod_RAC_50km_native <- update(mod_baseline_native, . ~ . + RAC_50km, data = df_4model_native)
-
-## Perform model selection
-
-# Pack models into a named list for a tidy printout
-models_list_native <- list(
-  "No Spatial Control (Baseline)" = mod_baseline_native,
-  "1 km RAC"  = mod_RAC_1km_native,
-  "10 km RAC" = mod_RAC_10km_native,
-  "20 km RAC" = mod_RAC_20km_native,
-  "30 km RAC" = mod_RAC_30km_native,
-  "40 km RAC" = mod_RAC_40km_native,
-  "50 km RAC" = mod_RAC_50km_native
-)
-
-# Generate and print the selection table
-aic_table_native <- aictab(cand.set = models_list_native)
-print(aic_table_native)
-
-## Evaluate Residuals of the Winning Model
-
-# Extract the residuals from the top model
-winning_resids_native <- residuals(mod_RAC_20km_native, type = "deviance")
-
-# Run the Moran's I test using the 20 km spatial weights matrix we made earlier
-moran_result_native <- moran.test(winning_resids_native, listw = listw_20km_native, zero.policy = TRUE)
-print(moran_result_native)
-
-### Calculate residual autocorrelation for introduced range -----
-
-## Calculate mean native RAC
-RAC_20km_mean <- mean(df_4model_native$RAC_20km)
-
-## Assign all introduced reports the mean native value
-df_4model_introduced$RAC_20km <- RAC_20km_mean
+    pop_den_scaled = (weighted_pop_density - mean(df_4model_fullnative$weighted_pop_density))/sd(df_4model_fullnative$weighted_pop_density),
+    winter_temp_scaled = (avg_winter_low_temp - mean(df_4model_fullnative$avg_winter_low_temp))/sd(df_4model_fullnative$avg_winter_low_temp),
+    prop_forest_scaled = (prop_forest - mean(df_4model_fullnative$prop_forest))/sd(df_4model_fullnative$prop_forest),
+    RAC_20km = mean(df_4model_testnative$RAC_20km))
 
 ### Save and read model-ready datasets -----
-
-## Native range
-
-#Save df
-write_csv(df_4model_native, "Data/data_4model_native.csv")
-
-#Read saved df with RAC
-df_4model_native <- read_csv("Data/data_4model_native.csv")
-
-## Introduced range
 
 #Save df
 write_csv(df_4model_introduced, "Data/data_4model_introduced.csv")
@@ -207,31 +318,8 @@ df_4model_introduced <- read_csv("Data/data_4model_introduced.csv")
 
 ### Assess predictors for correlation -----
 
-## Native
-
-#Pearson's r
-cor(df_4model_native[c(10:12)], method = "pearson")
-
-## Introduced
-
 #Pearson's r
 cor(df_4model_introduced[c(10:12)], method = "pearson")
-
-### Perform logistic regression for native range -----
-
-## Create model
-mod_native <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + prop_forest_scaled + 
-               pop_den_scaled:winter_temp_scaled + pop_den_scaled:prop_forest_scaled + RAC_20km,
-               family = binomial(link = "logit"),
-               data = df_4model_native,
-               na.action = "na.fail")
-
-## Evaluate model
-summary(mod_native)
-confint(mod_native)
-r2(mod_native)
-visreg(mod_native, scale = "response")
-check_collinearity(mod_native)
 
 ### Predict introduced morphs with native model -----
 
@@ -245,7 +333,7 @@ df_4model_introduced$pred_prob <- predict(
 ## Discrimination (AUC / ROC Curve)
 roc_obj <- roc(df_4model_introduced$melanic_binary, df_4model_introduced$pred_prob)
 auc(roc_obj)
-plot(roc_obj, main = "ROC Curve: Native Model Predicting Introduced Range")
+plot(roc_obj) #ROC Curve: Native Model Predicting Introduced Range
 
 ## Mean Predicted Probability vs. Actual Prevalence
 mean_actual <- mean(df_4model_introduced$melanic_binary, na.rm = TRUE)
@@ -270,6 +358,7 @@ calib_model <- glm(
 # Inspect the intercept to determine whether the baseline melanism is different between the native and introduced ranges
 summary(calib_model)
 
+########## Visualizations -----
 ### Plot raw data -----
 
 ## Human pop den
