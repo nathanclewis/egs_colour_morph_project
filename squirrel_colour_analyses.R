@@ -75,9 +75,10 @@ df_full <- read_csv("Data/complete_data_4_analyses.csv") %>%
 df_4model_fullnative <- df_full %>%
   filter(introduced == "N") %>%
   mutate(
-    pop_den_scaled = (weighted_pop_density - mean(df_4model_fullnative$weighted_pop_density))/sd(df_4model_fullnative$weighted_pop_density),
-    winter_temp_scaled = (avg_winter_low_temp - mean(df_4model_fullnative$avg_winter_low_temp))/sd(df_4model_fullnative$avg_winter_low_temp),
-    prop_forest_scaled = (prop_forest - mean(df_4model_fullnative$prop_forest))/sd(df_4model_fullnative$prop_forest))
+    pop_den_scaled     = (weighted_pop_density - mean(weighted_pop_density, na.rm = TRUE)) / sd(weighted_pop_density, na.rm = TRUE),
+    winter_temp_scaled = (avg_winter_low_temp - mean(avg_winter_low_temp, na.rm = TRUE)) / sd(avg_winter_low_temp, na.rm = TRUE),
+    prop_forest_scaled = (prop_forest - mean(prop_forest, na.rm = TRUE)) / sd(prop_forest, na.rm = TRUE)
+  )
 
 ### Calculate residual autocorrelation -----
 
