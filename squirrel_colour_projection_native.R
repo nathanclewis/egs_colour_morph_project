@@ -29,7 +29,7 @@ library(tidyterra)
 
 {
 ## Full model dataset
-df_4_top_model <- read_csv("Data/data_4model.csv")
+df_4_top_model <- read_csv("Data/data_4model_fullnative.csv")
 
 ## Range map
 native_range <- read_sf("Data/EGS_nativerange.shp")%>%
@@ -62,8 +62,7 @@ rast_lc <- rast("C:/Users/Benson-Amram Lab/Desktop/Nathan/NA_NALCMS_landcover_20
 ### Create model for prediction -----
 
 ## Create model
-mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + prop_forest_scaled + 
-             introduced + pop_den_scaled:introduced + winter_temp_scaled:introduced + 
+mod <- glm(melanic_binary ~ pop_den_scaled + winter_temp_scaled + prop_forest_scaled +
              pop_den_scaled:winter_temp_scaled + pop_den_scaled:prop_forest_scaled + RAC_20km,
            family = binomial(link = "logit"),
            data = df_4_top_model,
@@ -133,7 +132,6 @@ rast_lc_cropped <- crop(rast_lc, native_lc_crs)
 
 # 2. Reclassify the NALCMS landcover map into binary Forest (1) vs Non-forest (0)
 # NALCMS Forest codes generally range from 1 to 6 (Coniferous, Deciduous, Mixed)
-# Check your specific metadata, but 1:6 is standard for NALCMS forest classes.
 m <- c(0, 0, 0,
        1, 6, 1,   # Classes 1 through 6 become 1 (Forest)
        6, 20, 0)  # Everything else becomes 0
