@@ -174,11 +174,8 @@ df_pred_melanism$pop_den_scaled <- (df_pred_melanism$population_density - pop_me
 df_pred_melanism$winter_temp_scaled <- (df_pred_melanism$avg_winter_daily_low - temp_mean) / temp_sd
 df_pred_melanism$prop_forest_scaled <- (df_pred_melanism$prop_forest - forest_mean) / forest_sd
 
-## Add introduced status
-df_pred_melanism$introduced <- "N"
-
 ## Save dataset
-#write_csv(df_pred_melanism, "C:/Users/Benson-Amram Lab/Desktop/Nathan/native_proj_dataset.csv")
+write_csv(df_pred_melanism, "Data/native_proj_dataset.csv")
 
 ### Project probability of melanism -----
 
@@ -223,5 +220,5 @@ proj_map <- ggplot() +
     fill = "Probability of Melanism"); proj_map
 
   # Save plot
-  ggsave("Figures/melanism_projection_June10_2026.tiff", proj_map, dpi = "retina")
+  ggsave("Figures/melanism_projection_Aug14_2026.tiff", proj_map, dpi = "retina")
   
