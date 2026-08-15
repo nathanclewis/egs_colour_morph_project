@@ -175,7 +175,7 @@ df_pred_melanism$winter_temp_scaled <- (df_pred_melanism$avg_winter_daily_low - 
 df_pred_melanism$prop_forest_scaled <- (df_pred_melanism$prop_forest - forest_mean) / forest_sd
 
 ## Save dataset
-write_csv(df_pred_melanism, "Data/native_proj_dataset.csv")
+#write_csv(df_pred_melanism, "C:/Users/Benson-Amram Lab/Desktop/Nathan/native_proj_dataset.csv")
 
 ### Project probability of melanism -----
 
